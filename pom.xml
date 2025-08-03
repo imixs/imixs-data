@@ -9,7 +9,9 @@
 	<version>1.0.0-SNAPSHOT</version>
 
 	<modules>
+		<!-- 
 		<module>imixs-data-views</module>
+		-->
 		<module>imixs-data-groups</module>
 
 		<!-- <module>imixs-data-documents</module>
