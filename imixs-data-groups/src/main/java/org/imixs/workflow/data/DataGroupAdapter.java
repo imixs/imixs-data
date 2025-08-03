@@ -21,6 +21,7 @@ import org.imixs.workflow.ItemCollection;
 import org.imixs.workflow.SignalAdapter;
 import org.imixs.workflow.engine.DocumentService;
 import org.imixs.workflow.engine.WorkflowService;
+import org.imixs.workflow.exceptions.AccessDeniedException;
 import org.imixs.workflow.exceptions.AdapterException;
 import org.imixs.workflow.exceptions.ModelException;
 import org.imixs.workflow.exceptions.PluginException;
@@ -37,14 +38,12 @@ import jakarta.inject.Inject;
  * <pre>
  * {@code
 <imixs-data-group name="ADD">
-    <query>(type:workitem) AND (:sepa-export-manual*)</endpoint>
+    <query>(type:workitem) AND ($modelversion:sepa-export-manual*)</endpoint>
     <init.model>sepa-export-manual-1.0</init.model>
     <init.task>1000</init.task>
     <init.event>10</init.event>
     <!-- Optional -->
     <update.event>20</update.event>
-    <event.maxcount>50</event.maxcount>
-    <maxcount>50</maxcount>
 </imixs-data-group>
  * }
  * </pre>
@@ -90,10 +89,9 @@ public class DataGroupAdapter implements SignalAdapter {
     }
 
     /**
-     * This method parses the LLM Event definitions.
+     * This method parses the DataGroup Event definitions.
      * 
-     * For each PROMPT the method posts a context data (e.g text from an attachment)
-     * to the Imixs-AI Analyse service endpoint
+     * A workitem can be added name=ADD or removed name=REMOVE
      * 
      * @throws PluginException
      */
@@ -101,7 +99,6 @@ public class DataGroupAdapter implements SignalAdapter {
     public ItemCollection execute(ItemCollection workitem, ItemCollection event)
             throws AdapterException, PluginException {
 
-        boolean debug = false;
         long processingTime = System.currentTimeMillis();
 
         // read optional configuration form the model or imixs.properties....
@@ -115,71 +112,16 @@ public class DataGroupAdapter implements SignalAdapter {
          */
         if (addDefinitions != null) {
             for (ItemCollection groupDefinition : addDefinitions) {
-
-                String query = groupDefinition.getItemValueString("query");
-
-                String initModel = groupDefinition.getItemValueString("init.model");
-                int initTaskId = groupDefinition.getItemValueInteger("init.task");
-                int initEventId = groupDefinition.getItemValueInteger("init.event");
-                int updateEventId = groupDefinition.getItemValueInteger("update.event");
-
-                int maxCount = groupDefinition.getItemValueInteger("maxCount");
-                int eventIdMaxCount = groupDefinition.getItemValueInteger("event.maxCount");
-
-                logger.info("├── add workitem to dataGroup: " + initModel);
-                ItemCollection dataGroup;
-                // find group
-                try {
-                    dataGroup = dataGroupService.findDataGroup(query);
-
-                    if (dataGroup == null) {
-                        if (debug) {
-                            logger.info(
-                                    "│   ├── create new dataGroup " + initModel + " " + initTaskId + "." + initEventId);
-                        }
-                        // create a new one
-                        dataGroup = dataGroupService.createDataGroup(initModel, initTaskId, initEventId);
-                        if (debug) {
-                            logger.info("│   ├── dataGroup created");
-                        }
-                    }
-
-                    // add current workitem to data gruop
-                    List<String> refList = dataGroup.getItemValue("$workitemref");
-                    if (!refList.contains(workitem.getUniqueID())) {
-                        dataGroup.appendItemValueUnique("$workitemref", workitem.getUniqueID());
-                        if (updateEventId > 0) {
-                            dataGroup.event(updateEventId);
-                            workflowService.processWorkItem(dataGroup);
-                        } else {
-                            // simple update
-                            documentService.save(dataGroup);
-                        }
-
-                        // test if the max count was reached.
-                        if (maxCount > 0 && dataGroup.getItemValue("").size() >= maxCount) {
-                            logger.info("│   ├── Max Count of " + maxCount
-                                    + " workitems reached, executing maxcount-event=" + eventIdMaxCount);
-                            // process the maxcoutn event on the sepa export
-                            dataGroup.event(eventIdMaxCount);
-                            workflowService.processWorkItem(dataGroup);
-                        }
-                    }
-                } catch (QueryException | ModelException | ProcessingErrorException e) {
-                    logger.warning("├── ⚠️ Failed to update dataGroup: " + e.getMessage());
-                    throw new PluginException(DataGroupAdapter.class.getName(),
-                            DataGroupService.API_ERROR,
-                            "⚠️ Failed to update dataGroup: " + e.getMessage(), e);
-                }
-
-                return workitem;
+                addWorkitemToDataGroup(workitem, groupDefinition);
             }
 
         }
 
         // verify REMOVE mode
-        if (removeDefinitions != null && removeDefinitions.size() > 0) {
-            logger.warning("├── ⚠️ Remove not yet implemented");
+        if (removeDefinitions != null) {
+            for (ItemCollection groupDefinition : removeDefinitions) {
+                removeWorkitemFromDataGroup(workitem, groupDefinition);
+            }
         }
 
         logger.info("├── ✅ completed (" + (System.currentTimeMillis() - processingTime) + "ms)");
@@ -187,4 +129,112 @@ public class DataGroupAdapter implements SignalAdapter {
         return workitem;
     }
 
+    /**
+     * This helper method adds a single workitem to a dataGroup defined by a
+     * dataGroupDefinition
+     * 
+     * @param workitem
+     * @param groupDefinition
+     * @throws AccessDeniedException
+     * @throws PluginException
+     */
+    @SuppressWarnings("unchecked")
+    private void addWorkitemToDataGroup(ItemCollection workitem, ItemCollection groupDefinition)
+            throws AccessDeniedException, PluginException {
+        boolean debug = groupDefinition.getItemValueBoolean("debug");
+        String query = groupDefinition.getItemValueString("query");
+
+        String initModel = groupDefinition.getItemValueString("init.model");
+        int initTaskId = groupDefinition.getItemValueInteger("init.task");
+        int initEventId = groupDefinition.getItemValueInteger("init.event");
+        int updateEventId = groupDefinition.getItemValueInteger("update.event");
+
+        logger.info("├── add workitem to dataGroup: " + initModel);
+        ItemCollection dataGroup;
+        // find group
+        try {
+            dataGroup = dataGroupService.findDataGroup(query);
+            if (dataGroup == null) {
+                if (debug) {
+                    logger.info(
+                            "│   ├── create new dataGroup " + initModel + " " + initTaskId + "." + initEventId);
+                }
+                // create a new one
+                dataGroup = dataGroupService.createDataGroup(initModel, initTaskId, initEventId);
+                if (debug) {
+                    logger.info("│   ├── dataGroup created");
+                }
+            }
+
+            // add current workitem to data gruop
+            List<String> refList = workitem.getItemValue("$workitemref");
+            if (!refList.contains(dataGroup.getUniqueID())) {
+                workitem.appendItemValueUnique("$workitemref", dataGroup.getUniqueID());
+                if (updateEventId > 0) {
+                    dataGroup.event(updateEventId);
+                    workflowService.processWorkItem(dataGroup);
+                }
+
+            } else {
+                logger.info(
+                        "│   ├── workitem already assigned to dataGroup '" + dataGroup.getUniqueID() + "'");
+            }
+        } catch (QueryException | ModelException | ProcessingErrorException e) {
+            logger.warning("├── ⚠️ Failed to update dataGroup: " + e.getMessage());
+            throw new PluginException(DataGroupAdapter.class.getName(),
+                    DataGroupService.API_ERROR,
+                    "⚠️ Failed to update dataGroup: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * This helper method removes a single workitem from a dataGroup defined by a
+     * dataGroupDefinition
+     * 
+     * @param workitem
+     * @param groupDefinition
+     * @throws AccessDeniedException
+     * @throws PluginException
+     * @throws ModelException
+     */
+    @SuppressWarnings("unchecked")
+    private void removeWorkitemFromDataGroup(ItemCollection workitem, ItemCollection groupDefinition)
+            throws AccessDeniedException, PluginException {
+        boolean debug = groupDefinition.getItemValueBoolean("debug");
+        String query = groupDefinition.getItemValueString("query");
+        int updateEventId = groupDefinition.getItemValueInteger("update.event");
+
+        ItemCollection dataGroup;
+        logger.info("├── remove workitem '" + workitem.getUniqueID() + "' from dataGroup...");
+        // find group
+        try {
+            dataGroup = dataGroupService.findDataGroup(query);
+            if (dataGroup != null) {
+                if (debug) {
+                    logger.info(
+                            "│   ├── remove workitem '" + workitem.getUniqueID() + "' from dataGroup "
+                                    + dataGroup.getUniqueID());
+                }
+                List<String> refList = workitem.getItemValue("$workitemref");
+                while (refList.contains(dataGroup.getUniqueID())) {
+                    refList.remove(dataGroup.getUniqueID());
+                    workitem.setItemValue("$workitemref", refList);
+                }
+
+                if (updateEventId > 0) {
+                    dataGroup.event(updateEventId);
+                    workflowService.processWorkItem(dataGroup);
+                }
+            } else {
+                logger.info(
+                        "│   ├── ⚠️ no matching data group found");
+            }
+
+        } catch (QueryException | ProcessingErrorException | ModelException e) {
+            logger.warning("├── ⚠️ Failed to update dataGroup: " + e.getMessage());
+            throw new PluginException(DataGroupAdapter.class.getName(),
+                    DataGroupService.API_ERROR,
+                    "⚠️ Failed to update dataGroup: " + e.getMessage(), e);
+        }
+    }
 }

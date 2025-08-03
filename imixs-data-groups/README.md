@@ -14,9 +14,23 @@ To build a data group just add the DataGroupAdapter to the corresponding event a
     <init.event>10</init.event>
     <!-- Optional -->
     <update.event>20</update.event>
-    <event.maxcount>50</event.maxcount>
-    <maxcount>50</maxcount>
+
 </imixs-data-group>
 ```
 
-This will add the current workitem to a new data group of the workflow model 'sepa-export-manual-1.0' with the initial task 1000 and the initial event '10'. If a corresponding group already exists, the workflow group will be processed by the event 20 which is a optional functionality. The DataGroupService is using the given query to test if a corresponding data group already exists.
+This will add the current workitem to a new data group of the workflow model 'sepa-export-manual-1.0' with the initial task 1000 and the initial event '10'. If a corresponding group already exists, the data group will be processed by the event 20 which is an optional functionality. The DataGroupService is using the given query to test if a corresponding data group already exists.
+
+## Remove a Workitem from a Data Group
+
+To remove a workitem from a data group you can use the following definition:
+
+```xml
+<imixs-data-group name="REMOVE">
+    <query>(type:workitem) AND ($modelversion:sepa-export-manual*)</query>
+    <!-- Optional -->
+    <update.event>20</update.event>
+
+</imixs-data-group>
+```
+
+This definition will remove the current workitem from a data group of the workflow model 'sepa-export-manual-1.0'. If a corresponding group exists, the data group will be processed by the event 20 which is an optional functionality. The DataGroupService is using the given query to test if a corresponding data group already exists.
