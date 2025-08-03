@@ -1,0 +1,447 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>org.imixs.workflow</groupId>
+	<artifactId>imixs-data</artifactId>
+	<packaging>pom</packaging>
+	<name>Imixs-Data</name>
+	<version>1.0.0-SNAPSHOT</version>
+
+	<modules>
+		<module>imixs-data-views</module>
+		<module>imixs-data-groups</module>
+
+		<!-- <module>imixs-data-documents</module>
+		<module>imixs-data-importer</module>
+		<module>imixs-data-exporter</module>
+		-->
+
+	</modules>
+
+
+	<description>
+		Imixs Workflow provides a platform for an open and standardized workflow technology. 
+		This is the meta project for the Imixs Workflow artefacts 
+		imixs-workflow-core, imixs-workflow-engine, imixs-workflow-faces and imixs-workflow-jax-rs
+	</description>
+
+	<url>https://github.com/imixs/imixs-workflow</url>
+	<organization>
+		<name>Imixs Software Solutions GmbH</name>
+		<url>http://www.imixs.com</url>
+	</organization>
+	<inceptionYear>2025</inceptionYear>
+	<developers>
+		<developer>
+			<id>rsoika</id>
+			<name>Ralph Soika</name>
+			<email>ralph.soika@imixs.com</email>
+			<url>http://blog.imixs.org/</url>
+			<organization>Imixs Software Solutions GmbH</organization>
+			<organizationUrl>http://www.imixs.com</organizationUrl>
+			<roles>
+				<role>developer</role>
+				<role>testing</role>
+			</roles>
+			<timezone>2</timezone>
+		</developer>
+
+		<developer>
+			<id>gaheinle</id>
+			<name>Gaby Heinle</name>
+			<email />
+			<url />
+			<organization>Imixs Software Solutions GmbH</organization>
+			<organizationUrl>http://www.imixs.com</organizationUrl>
+			<roles>
+				<role>developer</role>
+				<role>testing</role>
+			</roles>
+			<timezone>2</timezone>
+		</developer>
+	</developers>
+
+	<scm>
+		<connection>scm:git:git@github.com:imixs/imixs-data.git</connection>
+		<developerConnection>scm:git:git@github.com:imixs/imixs-data.git</developerConnection>
+		<url>https://github.com/imixs/imixs-data/</url>
+		<tag>HEAD</tag>
+	</scm>
+
+	<issueManagement>
+		<system>GitHub</system>
+		<url>https://github.com/imixs-data/issues</url>
+	</issueManagement>
+
+	<mailingLists>
+		<!-- no mailing lists supported -->
+	</mailingLists>
+
+	<licenses>
+		<license>
+			<name>GNU General Public License</name>
+			<url>http://www.gnu.org/licenses/gpl-2.0.txt</url>
+			<distribution>repo</distribution>
+			<comments>All the results of the imixs workflow project are subject to the GPL licensing model. </comments>
+		</license>
+	</licenses>
+
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+		<maven.compiler.source>11</maven.compiler.source>
+		<maven.compiler.target>11</maven.compiler.target>
+		<jakarta.version>10.0.0</jakarta.version>
+		<org.imixs.workflow.version>6.1.0</org.imixs.workflow.version>
+		<org.imixs.melman.version>2.1.0</org.imixs.melman.version>
+		<org.imixs-e-invoice.version>1.0.1</org.imixs-e-invoice.version>
+		<apache.pdfbox.version>2.0.21</apache.pdfbox.version>
+		<microprofile.version>6.0</microprofile.version>
+		<microprofile-metrics.version>4.0</microprofile-metrics.version>
+		<!-- test dependencies -->
+		<junit.jupiter.version>5.9.2</junit.jupiter.version>
+		<mockito.version>5.8.0</mockito.version>
+		<org.imixs.mock.version>6.1.0</org.imixs.mock.version>
+	</properties>
+
+	<repositories>
+		<repository>
+			<id>central-portal-snapshots</id>
+			<name>Central Portal Snapshots</name>
+			<url>https://central.sonatype.com/repository/maven-snapshots/</url>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+			<snapshots>
+				<enabled>true</enabled>
+			</snapshots>
+		</repository>
+	</repositories>
+
+	<build>
+		<plugins>
+
+			<!-- use JDK settings for compiling -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.8.1</version>
+				<configuration>
+					<source>11</source>
+					<target>11</target>
+				</configuration>
+			</plugin>
+			<!-- License -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<version>3.3.0</version>
+				<configuration>
+					<archive>
+						<addMavenDescriptor>true</addMavenDescriptor>
+						<manifestEntries>
+							<Bundle-License>
+								https://www.imixs.org/license.html</Bundle-License>
+						</manifestEntries>
+					</archive>
+				</configuration>
+			</plugin>
+			<!-- Testing JUnit 5 -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>2.22.2</version>
+			</plugin>
+
+			<!-- release management -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-release-plugin</artifactId>
+				<version>3.0.1</version>
+				<configuration>
+					<autoVersionSubmodules>true</autoVersionSubmodules>
+					<useReleaseProfile>false</useReleaseProfile>
+					<releaseProfiles>release</releaseProfiles>
+					<goals>deploy</goals>
+				</configuration>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-site-plugin</artifactId>
+				<version>3.12.1</version>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-project-info-reports-plugin</artifactId>
+				<version>3.1.0</version>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<version>3.2.0</version>
+				<configuration>
+					<additionalOptions>-Xdoclint:none</additionalOptions>
+				</configuration>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jxr-plugin</artifactId>
+				<version>3.0.0</version>
+			</plugin>
+		</plugins>
+
+
+		<testResources>
+			<!-- 
+			<testResource>
+				<directory>${basedir}/../reports</directory>
+			</testResource>
+			-->
+			<testResource>
+				<directory>${basedir}/src/test/resources</directory>
+			</testResource>
+		</testResources>
+
+	</build>
+
+	<reporting>
+		<plugins>
+			<!-- java doc -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<version>3.2.0</version>
+				<configuration>
+					<additionalOptions>-Xdoclint:none</additionalOptions>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jxr-plugin</artifactId>
+				<version>3.0.0</version>
+			</plugin>
+		</plugins>
+	</reporting>
+
+	<profiles>
+
+		<!-- Profile for Releases -->
+		<profile>
+			<id>release</id>
+			<build>
+				<plugins>
+					<!-- for RELEASES: Central Publishing Plugin -->
+					<plugin>
+						<groupId>org.sonatype.central</groupId>
+						<artifactId>central-publishing-maven-plugin</artifactId>
+						<version>0.8.0</version>
+						<extensions>true</extensions>
+						<configuration>
+							<publishingServerId>central</publishingServerId>
+							<autoPublish>true</autoPublish>
+							<waitUntil>published</waitUntil>
+						</configuration>
+					</plugin>
+
+
+					<!-- Source Plugin -->
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-source-plugin</artifactId>
+						<version>3.2.1</version>
+						<executions>
+							<execution>
+								<id>attach-sources</id>
+								<goals>
+									<goal>jar-no-fork</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+
+					<!-- Javadoc Plugin -->
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-javadoc-plugin</artifactId>
+						<version>3.2.0</version>
+						<configuration>
+							<additionalOptions>-Xdoclint:none</additionalOptions>
+						</configuration>
+						<executions>
+							<execution>
+								<id>attach-javadocs</id>
+								<goals>
+									<goal>jar</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+
+					<!-- GPG Signing Plugin -->
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-gpg-plugin</artifactId>
+						<version>3.1.0</version>
+						<executions>
+							<execution>
+								<id>sign-artifacts</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>sign</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
+
+	<dependencyManagement>
+		<dependencies>
+			<!-- WORKFLOW -->
+			<dependency>
+				<groupId>org.imixs.workflow</groupId>
+				<artifactId>imixs-workflow-core</artifactId>
+				<version>${org.imixs.workflow.version}</version>
+				<scope>provided</scope>
+				<!-- excluded from manifest classpath, and excluded from WEB-INF/lib -->
+			</dependency>
+			<dependency>
+				<groupId>org.imixs.workflow</groupId>
+				<artifactId>imixs-workflow-engine</artifactId>
+				<version>${org.imixs.workflow.version}</version>
+				<scope>provided</scope>
+				<!-- excluded from manifest classpath, and excluded from WEB-INF/lib -->
+			</dependency>
+			<dependency>
+				<groupId>org.imixs.workflow</groupId>
+				<artifactId>imixs-workflow-jax-rs</artifactId>
+				<version>${org.imixs.workflow.version}</version>
+				<scope>provided</scope>
+				<!-- excluded from manifest classpath, and excluded from WEB-INF/lib -->
+			</dependency>
+			<dependency>
+				<groupId>org.imixs.workflow</groupId>
+				<artifactId>imixs-workflow-faces</artifactId>
+				<version>${org.imixs.workflow.version}</version>
+				<scope>provided</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.imixs.marty</groupId>
+				<artifactId>imixs-marty-ejb</artifactId>
+				<version>${org.imixs.marty.version}</version>
+				<scope>provided</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.imixs.workflow</groupId>
+				<artifactId>imixs-melman</artifactId>
+				<version>${org.imixs.melman.version}</version>
+				<scope>provided</scope>
+			</dependency>
+			<!-- Apache Commons FTP Client -->
+			<dependency>
+				<groupId>commons-net</groupId>
+				<artifactId>commons-net</artifactId>
+				<version>3.9.0</version>
+				<scope>provided</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+	<dependencies>
+
+		<!-- Jakarta EE -->
+		<dependency>
+			<groupId>jakarta.platform</groupId>
+			<artifactId>jakarta.jakartaee-api</artifactId>
+			<version>${jakarta.version}</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- Microprofile -->
+		<dependency>
+			<groupId>org.eclipse.microprofile</groupId>
+			<artifactId>microprofile</artifactId>
+			<version>${microprofile.version}</version>
+			<type>pom</type>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- Testing -->
+
+		<!-- JUnit 5 Dependencies -->
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-api</artifactId>
+			<version>${junit.jupiter.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-engine</artifactId>
+			<version>${junit.jupiter.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- Mockito Dependencies -->
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-core</artifactId>
+			<version>${mockito.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-junit-jupiter</artifactId>
+			<version>${mockito.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- Test dependencies -->
+		<dependency>
+			<groupId>org.eclipse.parsson</groupId>
+			<artifactId>jakarta.json</artifactId>
+			<version>1.1.1</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.glassfish.jaxb</groupId>
+			<artifactId>jaxb-runtime</artifactId>
+			<version>3.0.0</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>jakarta.xml.bind</groupId>
+			<artifactId>jakarta.xml.bind-api</artifactId>
+			<version>3.0.0</version>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- Imixs Mock -->
+		<dependency>
+			<groupId>org.imixs.workflow</groupId>
+			<artifactId>imixs-mock</artifactId>
+			<version>${org.imixs.mock.version}</version>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+
+	<!-- Distribution Management central.sonatype.org -->
+	<distributionManagement>
+		<snapshotRepository>
+			<id>central</id>
+			<url>https://central.sonatype.com/repository/maven-snapshots/</url>
+		</snapshotRepository>
+		<repository>
+			<id>central</id>
+			<url>https://central.sonatype.com</url>
+		</repository>
+	</distributionManagement>
+
+</project>
