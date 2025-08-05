@@ -143,10 +143,14 @@ public class DataGroupAdapter implements SignalAdapter {
             throws AccessDeniedException, PluginException {
         boolean debug = groupDefinition.getItemValueBoolean("debug");
         String query = groupDefinition.getItemValueString("query");
+        logger.info("query=" + query);
+        query = workflowService.adaptText(query, workitem);
+        logger.info("query=" + query);
 
         String initModel = groupDefinition.getItemValueString("init.model");
         int initTaskId = groupDefinition.getItemValueInteger("init.task");
         int initEventId = groupDefinition.getItemValueInteger("init.event");
+        String itemList = groupDefinition.getItemValueString("init.items");
         int updateEventId = groupDefinition.getItemValueInteger("update.event");
 
         logger.info("├── add workitem to dataGroup: " + initModel);
@@ -160,7 +164,7 @@ public class DataGroupAdapter implements SignalAdapter {
                             "│   ├── create new dataGroup " + initModel + " " + initTaskId + "." + initEventId);
                 }
                 // create a new one
-                dataGroup = dataGroupService.createDataGroup(initModel, initTaskId, initEventId);
+                dataGroup = dataGroupService.createDataGroup(initModel, initTaskId, initEventId, workitem, itemList);
                 if (debug) {
                     logger.info("│   ├── dataGroup created");
                 }

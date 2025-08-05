@@ -16,7 +16,10 @@ package org.imixs.workflow.data;
 
 import java.io.Serializable;
 import java.util.List;
+import java.util.Map;
+import java.util.StringTokenizer;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 import org.imixs.workflow.ItemCollection;
 import org.imixs.workflow.engine.WorkflowService;
@@ -84,17 +87,78 @@ public class DataGroupService implements Serializable {
      * @param modelversion
      * @param taskId
      * @param eventId
+     * @param source       - source ItemCollection to copy items
+     * @param items        - list of items to be copied.
      * @return new DataGroup
      * @throws ModelException
      * @throws PluginException
      */
-    public ItemCollection createDataGroup(String modelVersion, int taskId, int eventId)
+    public ItemCollection createDataGroup(String modelVersion, int taskId, int eventId, ItemCollection source,
+            String items)
             throws ModelException, PluginException {
 
         logger.info("Create new DataGroup " + modelVersion + " " + taskId + "." + eventId);
         ItemCollection dataGroup = new ItemCollection().model(modelVersion).task(taskId).event(eventId);
+
+        // now clone the field list...
+        copyItemList(items, source, dataGroup);
         return workflowService.processWorkItem(dataGroup);
 
+    }
+
+    /**
+     * This Method copies the fields defined in 'items' into the targetWorkitem.
+     * Multiple values are separated with comma ','.
+     * <p>
+     * In case a item name contains '|' the target field name will become the right
+     * part of the item name.
+     * <p>
+     * Example: {@code
+     *   txttitle,txtfirstname
+     *   
+     *   txttitle|newitem1,txtfirstname|newitem2
+     *   
+     * }
+     * 
+     * <p>
+     * Optional also reg expressions are supported. In this case mapping of the item
+     * name is not supported.
+     * <p>
+     * Example: {@code
+     *   (^artikel$|^invoice$),txtTitel|txtNewTitel
+     *   
+     *   
+     * } A reg expression must be includes in brackets.
+     * 
+     */
+    protected void copyItemList(String items, ItemCollection source, ItemCollection target) {
+        // clone the field list...
+        logger.info("copy itemlist: " + items);
+        StringTokenizer st = new StringTokenizer(items, ",");
+        while (st.hasMoreTokens()) {
+            String field = st.nextToken().trim();
+
+            // test if field is a reg ex
+            if (field.startsWith("(") && field.endsWith(")")) {
+                Pattern itemPattern = Pattern.compile(field);
+                Map<String, List<Object>> map = source.getAllItems();
+                for (String itemName : map.keySet()) {
+                    if (itemPattern.matcher(itemName).find()) {
+                        target.replaceItemValue(itemName, source.getItemValue(itemName));
+                    }
+                }
+
+            } else {
+                // default behavior without reg ex
+                int pos = field.indexOf('|');
+                if (pos > -1) {
+                    target.replaceItemValue(field.substring(pos + 1).trim(),
+                            source.getItemValue(field.substring(0, pos).trim()));
+                } else {
+                    target.replaceItemValue(field, source.getItemValue(field));
+                }
+            }
+        }
     }
 
 }
