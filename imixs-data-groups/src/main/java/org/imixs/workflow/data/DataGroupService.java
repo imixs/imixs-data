@@ -46,6 +46,8 @@ public class DataGroupService implements Serializable {
     private static final long serialVersionUID = 1L;
     private static Logger logger = Logger.getLogger(DataGroupService.class.getName());
 
+    public static final String ITEM_WORKITEMREF = "$workitemref";
+
     public static final String API_ERROR = "API_ERROR";
     public static final String ERROR_MISSING_DATA = "MISSING_DATA";
 

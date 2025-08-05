@@ -167,9 +167,9 @@ public class DataGroupAdapter implements SignalAdapter {
             }
 
             // add current workitem to data gruop
-            List<String> refList = workitem.getItemValue("$workitemref");
+            List<String> refList = workitem.getItemValue(DataGroupService.ITEM_WORKITEMREF);
             if (!refList.contains(dataGroup.getUniqueID())) {
-                workitem.appendItemValueUnique("$workitemref", dataGroup.getUniqueID());
+                workitem.appendItemValueUnique(DataGroupService.ITEM_WORKITEMREF, dataGroup.getUniqueID());
                 if (updateEventId > 0) {
                     dataGroup.event(updateEventId);
                     workflowService.processWorkItem(dataGroup);
@@ -215,10 +215,10 @@ public class DataGroupAdapter implements SignalAdapter {
                             "│   ├── remove workitem '" + workitem.getUniqueID() + "' from dataGroup "
                                     + dataGroup.getUniqueID());
                 }
-                List<String> refList = workitem.getItemValue("$workitemref");
+                List<String> refList = workitem.getItemValue(DataGroupService.ITEM_WORKITEMREF);
                 while (refList.contains(dataGroup.getUniqueID())) {
                     refList.remove(dataGroup.getUniqueID());
-                    workitem.setItemValue("$workitemref", refList);
+                    workitem.setItemValue(DataGroupService.ITEM_WORKITEMREF, refList);
                 }
 
                 if (updateEventId > 0) {

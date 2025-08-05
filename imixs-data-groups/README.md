@@ -1,6 +1,11 @@
 # Imixs-Data Groups
 
-Imixs Data groups are used to group workitems in a master process. For example you can group invoices to be exported into an external IT system in a new master group or you may want to payment information into a statement of account for a customer.
+An Imixs Data Group is an business process that is referenced by other processes within the same process instance.
+Data groups allow you to organize and group related workitems under a master process.
+For example, you want to summarize all payment transactions of a customer in a consolidated 'Statement of Account'.
+Or you may want to group invoices that need to be exported into another IT system in an 'Export process'.
+
+A business process references a data group via the item `$workitemref`, which makes it easy to access data groups via the core API from Imixs-Workflow.
 
 ## Build a Data Group
 
