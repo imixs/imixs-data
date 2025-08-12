@@ -143,9 +143,7 @@ public class DataGroupAdapter implements SignalAdapter {
             throws AccessDeniedException, PluginException {
         boolean debug = groupDefinition.getItemValueBoolean("debug");
         String query = groupDefinition.getItemValueString("query");
-        logger.info("query=" + query);
         query = workflowService.adaptText(query, workitem);
-        logger.info("query=" + query);
 
         String initModel = groupDefinition.getItemValueString("init.model");
         int initTaskId = groupDefinition.getItemValueInteger("init.task");
@@ -206,6 +204,7 @@ public class DataGroupAdapter implements SignalAdapter {
             throws AccessDeniedException, PluginException {
         boolean debug = groupDefinition.getItemValueBoolean("debug");
         String query = groupDefinition.getItemValueString("query");
+        query = workflowService.adaptText(query, workitem);
         int updateEventId = groupDefinition.getItemValueInteger("update.event");
 
         ItemCollection dataGroup;
