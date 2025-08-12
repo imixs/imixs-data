@@ -50,11 +50,11 @@ import jakarta.servlet.http.HttpServletRequest;
 
 @Named
 @ConversationScoped
-public class DataGroupViewController extends ViewController {
+public class DataGroupController extends ViewController {
     private static final long serialVersionUID = 1L;
 
     public static final int MAX_SEARCH_RESULT = 1000;
-    public static Logger logger = Logger.getLogger(DataGroupViewController.class.getName());
+    public static Logger logger = Logger.getLogger(DataGroupController.class.getName());
 
     @Inject
     protected WorkflowService workflowService;
@@ -131,4 +131,38 @@ public class DataGroupViewController extends ViewController {
         return workflowService.getWorkItem(id);
     }
 
+    /**
+     * Returns a single value from a Option key/value list
+     * 
+     * @param options - options
+     * @param key     - option key
+     * @return option value
+     */
+    public String getOptionValue(String options, String key) {
+        // Null checks
+        if (options == null || key == null || options.trim().isEmpty() || key.trim().isEmpty()) {
+            return null;
+        }
+
+        // Split options into key/value pairs (separated by semicolon)
+        String[] pairs = options.split(";");
+
+        for (String pair : pairs) {
+            // Split each pair into key and value (separated by equals sign)
+            String[] keyValue = pair.split("=", 2); // Limit to 2 in case value contains "="
+
+            if (keyValue.length == 2) {
+                String currentKey = keyValue[0].trim();
+                String currentValue = keyValue[1].trim();
+
+                // Check if the searched key was found
+                if (key.equals(currentKey)) {
+                    return currentValue;
+                }
+            }
+        }
+
+        // Key not found
+        return null;
+    }
 }
