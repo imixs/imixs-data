@@ -74,38 +74,38 @@ public class DataViewController extends ViewController {
     public static final String ERROR_CONFIG = "CONFIG_ERROR";
     public static final int MAX_ROWS = 9999;
 
-    private List<ItemCollection> viewItemDefinitions = null;
+    protected List<ItemCollection> viewItemDefinitions = null;
     protected ItemCollection dataViewDefinition = null;
-    private ItemCollection filter;
-    private String query;
-    private String errorMessage;
+    protected ItemCollection filter;
+    protected String query;
+    protected String errorMessage;
 
     @Inject
-    DataViewCache dataViewCache;
+    protected DataViewCache dataViewCache;
 
     @Inject
-    private Conversation conversation;
+    protected Conversation conversation;
 
     @Inject
-    private DocumentService documentService;
+    protected DocumentService documentService;
 
     @Inject
-    private WorkflowService workflowService;
+    protected WorkflowService workflowService;
 
     @Inject
-    SnapshotService snapshotService;
+    protected SnapshotService snapshotService;
 
     @Inject
-    WorkflowController workflowController;
+    protected WorkflowController workflowController;
 
     @Inject
-    DataViewDefaultExporter dataViewDefaultExporter;
+    protected DataViewDefaultExporter dataViewDefaultExporter;
 
     @Inject
-    ViewHandler viewHandler;
+    protected ViewHandler viewHandler;
 
     @Inject
-    DataViewDefinitionController dataViewDefinitionController;
+    protected DataViewDefinitionController dataViewDefinitionController;
 
     private static Logger logger = Logger.getLogger(DataViewController.class.getName());
 
@@ -121,7 +121,7 @@ public class DataViewController extends ViewController {
     }
 
     /**
-     * This method loads the custom form sections
+     * This method loads the form information
      */
     public void onLoad() {
         String uniqueid = null;
@@ -161,9 +161,6 @@ public class DataViewController extends ViewController {
                         dataViewDefinition.getItemValueString("description"));
                 viewItemDefinitions = DataViewDefinitionController
                         .computeDataViewItemDefinitions(dataViewDefinition);
-
-                // customFormController.computeFieldDefinition(filter);
-                // sections = customFormController.getSections();
 
                 // Update View Handler settings
                 String sortBy = dataViewDefinition.getItemValueString("sort.by");
