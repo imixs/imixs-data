@@ -21,7 +21,7 @@
  *  	Ralph Soika
  *  
  *******************************************************************************/
-package org.imixs.workflow.data;
+package org.imixs.workflow.datagroup;
 
 import java.io.Serializable;
 import java.util.ArrayList;
