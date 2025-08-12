@@ -25,7 +25,6 @@ package org.imixs.workflow.dataview;
 
 import java.io.IOException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -187,25 +186,34 @@ public class DataViewController extends ViewController {
 
     }
 
-    @Override
-    public List<ItemCollection> loadData() throws QueryException {
-
-        try {
-
-            return super.loadData();
-
-        } catch (Exception e) {
-            logger.severe("Failed to load view: " + e.getMessage());
-            return new ArrayList<>();
-        }
-
-    }
-
     public ItemCollection getDataViewDefinition() {
         return dataViewDefinition;
     }
 
     public List<ItemCollection> getViewItemDefinitions() {
+        return viewItemDefinitions;
+    }
+
+    /**
+     * Loads a dataView Item Definition by name
+     * 
+     * @param dataView - name of the dataview
+     * @return
+     */
+    public List<ItemCollection> getViewItemDefinitions(String dataView) {
+        try {
+            String query = "(type:dataview) AND (name:\"" + dataView + "\")";
+            List<ItemCollection> result;
+            result = documentService.find(query, 1, 0);
+            if (result.size() > 0) {
+                dataViewDefinition = result.get(0);
+                viewItemDefinitions = DataViewDefinitionController
+                        .computeDataViewItemDefinitions(dataViewDefinition);
+            }
+        } catch (QueryException e) {
+            logger.warning("DataView '" + dataView + "' is not defined!");
+        }
+
         return viewItemDefinitions;
     }
 
@@ -284,6 +292,7 @@ public class DataViewController extends ViewController {
      * 
      * @return
      */
+    @Override
     public String getQuery() {
         return query;
     }
