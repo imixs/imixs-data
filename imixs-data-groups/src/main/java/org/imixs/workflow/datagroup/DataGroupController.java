@@ -88,7 +88,6 @@ public class DataGroupController extends ViewController {
             conversation.begin();
             logger.log(Level.FINEST, "......start new conversation, id={0}",
                     conversation.getId());
-
         }
     }
 
@@ -109,7 +108,6 @@ public class DataGroupController extends ViewController {
      */
     @Override
     public String getQuery() {
-        this.setLoadStubs(false);
         // select all references.....
         String uniqueId = workflowController.getWorkitem().getUniqueID();
         String query = "(";
@@ -118,7 +116,6 @@ public class DataGroupController extends ViewController {
 
         logger.fine("Query= " + query);
         return query;
-
     }
 
     /**

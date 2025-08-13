@@ -22,6 +22,7 @@ import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 import org.imixs.workflow.ItemCollection;
+import org.imixs.workflow.engine.DocumentService;
 import org.imixs.workflow.engine.WorkflowService;
 import org.imixs.workflow.exceptions.ModelException;
 import org.imixs.workflow.exceptions.PluginException;
@@ -54,11 +55,11 @@ public class DataGroupService implements Serializable {
     public static final String API_ERROR = "API_ERROR";
     public static final String ERROR_MISSING_DATA = "MISSING_DATA";
 
-    public static final String MODE_ADD = "add";
-    public static final String MODE_REMOVE = "remove";
-
     @Inject
     protected WorkflowService workflowService;
+
+    @Inject
+    protected DocumentService documentService;
 
     /**
      * Helper method verifies all data groups and returns the latest for the
@@ -159,6 +160,35 @@ public class DataGroupService implements Serializable {
                 }
             }
         }
+    }
+
+    /**
+     * Returns the current data group
+     * <p>
+     * The method implements a lazy loading mechanism and caches the result locally.
+     * 
+     * @return view result
+     * @throws QueryException
+     */
+    public List<ItemCollection> loadData(String uniqueId, int pageSize, int pageIndex, String sortBy,
+            boolean sortReverse, boolean loadStubs) throws QueryException {
+
+        // select all references.....
+
+        String query = "(";
+        query = " (type:\"workitem\" OR type:\"workitemarchive\") AND (" + DataGroupService.ITEM_WORKITEMREF + ":\""
+                + uniqueId + "\")";
+
+        logger.fine("Query= " + query);
+
+        List<ItemCollection> result = null;
+        if (loadStubs) {
+            result = documentService.findStubs(query, pageSize, pageIndex, sortBy, sortReverse);
+        } else {
+            result = documentService.find(query, pageSize, pageIndex, sortBy, sortReverse);
+        }
+
+        return result;
     }
 
 }

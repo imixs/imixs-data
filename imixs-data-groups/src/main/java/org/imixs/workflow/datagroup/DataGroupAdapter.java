@@ -55,6 +55,9 @@ import jakarta.inject.Inject;
 
 public class DataGroupAdapter implements SignalAdapter {
 
+    public static final String MODE_ADD = "add";
+    public static final String MODE_REMOVE = "remove";
+
     private static Logger logger = Logger.getLogger(DataGroupAdapter.class.getName());
 
     @Inject
@@ -104,9 +107,9 @@ public class DataGroupAdapter implements SignalAdapter {
         // read optional configuration form the model or imixs.properties....
 
         List<ItemCollection> addDefinitions = workflowService.evalWorkflowResultXML(event, "imixs-data-group",
-                DataGroupService.MODE_ADD, workitem, false);
+                MODE_ADD, workitem, true);
         List<ItemCollection> removeDefinitions = workflowService.evalWorkflowResultXML(event, "imixs-data-group",
-                DataGroupService.MODE_REMOVE, workitem, false);
+                MODE_REMOVE, workitem, true);
         /**
          * Iterate over each PROMPT definition and process the prompt
          */

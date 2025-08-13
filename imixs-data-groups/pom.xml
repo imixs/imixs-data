@@ -32,6 +32,12 @@
 			<artifactId>imixs-workflow-faces</artifactId>
 		</dependency>
 
+		<dependency>
+			<groupId>org.imixs.workflow</groupId>
+			<artifactId>imixs-data-views</artifactId>
+			<scope>compile</scope>
+		</dependency>
+
 	</dependencies>
 
 </project>

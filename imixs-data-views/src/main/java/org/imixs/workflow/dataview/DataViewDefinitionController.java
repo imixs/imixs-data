@@ -35,12 +35,11 @@ import org.imixs.workflow.exceptions.QueryException;
 import org.imixs.workflow.faces.data.AbstractDataController;
 import org.imixs.workflow.faces.data.DocumentController;
 
-import com.oracle.svm.core.annotate.Inject;
-
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.SessionScoped;
 import jakarta.faces.context.ExternalContext;
 import jakarta.faces.context.FacesContext;
+import jakarta.inject.Inject;
 import jakarta.inject.Named;
 
 /**
@@ -59,6 +58,9 @@ public class DataViewDefinitionController extends AbstractDataController {
 
     @Inject
     DocumentController documentController;
+
+    @Inject
+    protected DataViewService dataViewService;
 
     protected List<ItemCollection> dataViewDefinitions = null;
 
@@ -139,57 +141,7 @@ public class DataViewDefinitionController extends AbstractDataController {
     public void load(String uniqueid) {
 
         super.load(uniqueid);
-        attributeList = computeDataViewItemDefinitions(this.data);
-    }
-
-    /**
-     * Returns a List of ItemCollection instances representing the view column
-     * description.
-     * Each column has the items:
-     * 
-     * name,label,format,convert
-     * 
-     * @param dataViewDefinition
-     * @return
-     * 
-     */
-    @SuppressWarnings("unchecked")
-    public static List<ItemCollection> computeDataViewItemDefinitions(ItemCollection dataViewDefinition) {
-
-        ArrayList<ItemCollection> result = new ArrayList<ItemCollection>();
-        List<Object> mapItems = dataViewDefinition.getItemValue("dataview.items");
-        for (Object mapOderItem : mapItems) {
-            if (mapOderItem instanceof Map) {
-                ItemCollection itemCol = new ItemCollection((Map) mapOderItem);
-                // check label
-                String itemLabel = itemCol.getItemValueString("item.label");
-                if (itemLabel.isEmpty()) {
-                    itemCol.setItemValue("item.label", itemLabel);
-                }
-                // check type
-                String itemType = itemCol.getItemValueString("item.type");
-                if (itemType.isEmpty()) {
-                    itemCol.setItemValue("item.type", "xs:string");
-                }
-                result.add(itemCol);
-            }
-        }
-
-        // if no columns are defined we create the default columns
-        if (result.size() == 0) {
-            ItemCollection itemCol = new ItemCollection();
-            itemCol.setItemValue("item.name", "$workflowSummary");
-            itemCol.setItemValue("item.label", "Name");
-            itemCol.setItemValue("item.type", "xs:anyURI");
-            result.add(itemCol);
-
-            itemCol = new ItemCollection();
-            itemCol.setItemValue("item.name", "$modified");
-            itemCol.setItemValue("item.label", "Modified");
-            itemCol.setItemValue("item.type", "xs:date");
-            result.add(itemCol);
-        }
-        return result;
+        attributeList = dataViewService.computeDataViewItemDefinitions(this.data);
     }
 
     /**

@@ -103,6 +103,9 @@ public class DataViewController extends ViewController {
     protected DataViewDefaultExporter dataViewDefaultExporter;
 
     @Inject
+    protected DataViewService dataViewService;
+
+    @Inject
     protected ViewHandler viewHandler;
 
     @Inject
@@ -162,8 +165,7 @@ public class DataViewController extends ViewController {
                         dataViewDefinition.getItemValueString("name"));
                 filter.setItemValue("description",
                         dataViewDefinition.getItemValueString("description"));
-                viewItemDefinitions = DataViewDefinitionController
-                        .computeDataViewItemDefinitions(dataViewDefinition);
+                viewItemDefinitions = dataViewService.computeDataViewItemDefinitions(dataViewDefinition);
 
                 // Update View Handler settings
                 String sortBy = dataViewDefinition.getItemValueString("sort.by");
@@ -202,26 +204,15 @@ public class DataViewController extends ViewController {
      */
     public List<ItemCollection> getViewItemDefinitions(String dataView) {
 
-        // Caching implementieren
-        if (!Objects.equals(dataView, lastDataViewName)) {
-            long l = System.currentTimeMillis();
-            // Ihre bestehende Logik...
+        // Caching
+        if (viewItemDefinitions == null || !Objects.equals(dataView, lastDataViewName)) {
+            // load data view definition
             lastDataViewName = dataView;
-
-            try {
-                String query = "(type:dataview) AND (name:\"" + dataView + "\")";
-
-                List<ItemCollection> result = documentService.find(query, 1, 0);
-                if (result.size() > 0) {
-                    dataViewDefinition = result.get(0);
-                    viewItemDefinitions = DataViewDefinitionController
-                            .computeDataViewItemDefinitions(dataViewDefinition);
-                }
-                logger.fine(
-                        "getViewItemDefinitions: " + dataView + " took: " + (System.currentTimeMillis() - l) + "ms");
-            } catch (QueryException e) {
-                logger.warning("DataView '" + dataView + "' is not defined!");
+            dataViewDefinition = dataViewService.loadDataViewDefinition(dataView);
+            if (dataViewDefinition != null) {
+                viewItemDefinitions = dataViewService.computeDataViewItemDefinitions(dataViewDefinition);
             }
+
         }
         return viewItemDefinitions;
     }

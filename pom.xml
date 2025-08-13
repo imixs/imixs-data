@@ -347,6 +347,15 @@
 				<version>${org.imixs.melman.version}</version>
 				<scope>provided</scope>
 			</dependency>
+
+
+			<dependency>
+				<groupId>org.imixs.workflow</groupId>
+				<artifactId>imixs-data-views</artifactId>
+				<version>${project.version}</version>
+				<scope>provided</scope>
+			</dependency>
+
 			<!-- Imixs-Archive API -->
 			<dependency>
 				<groupId>org.imixs.workflow</groupId>
@@ -390,6 +399,7 @@
 			<type>pom</type>
 			<scope>provided</scope>
 		</dependency>
+
 
 		<!-- Testing -->
 
