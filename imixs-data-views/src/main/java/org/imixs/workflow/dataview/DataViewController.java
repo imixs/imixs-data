@@ -28,6 +28,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
@@ -106,6 +107,8 @@ public class DataViewController extends ViewController {
 
     @Inject
     protected DataViewDefinitionController dataViewDefinitionController;
+
+    private String lastDataViewName = null;
 
     private static Logger logger = Logger.getLogger(DataViewController.class.getName());
 
@@ -198,19 +201,28 @@ public class DataViewController extends ViewController {
      * @return
      */
     public List<ItemCollection> getViewItemDefinitions(String dataView) {
-        try {
-            String query = "(type:dataview) AND (name:\"" + dataView + "\")";
-            List<ItemCollection> result;
-            result = documentService.find(query, 1, 0);
-            if (result.size() > 0) {
-                dataViewDefinition = result.get(0);
-                viewItemDefinitions = DataViewDefinitionController
-                        .computeDataViewItemDefinitions(dataViewDefinition);
-            }
-        } catch (QueryException e) {
-            logger.warning("DataView '" + dataView + "' is not defined!");
-        }
 
+        // Caching implementieren
+        if (!Objects.equals(dataView, lastDataViewName)) {
+            long l = System.currentTimeMillis();
+            // Ihre bestehende Logik...
+            lastDataViewName = dataView;
+
+            try {
+                String query = "(type:dataview) AND (name:\"" + dataView + "\")";
+
+                List<ItemCollection> result = documentService.find(query, 1, 0);
+                if (result.size() > 0) {
+                    dataViewDefinition = result.get(0);
+                    viewItemDefinitions = DataViewDefinitionController
+                            .computeDataViewItemDefinitions(dataViewDefinition);
+                }
+                logger.fine(
+                        "getViewItemDefinitions: " + dataView + " took: " + (System.currentTimeMillis() - l) + "ms");
+            } catch (QueryException e) {
+                logger.warning("DataView '" + dataView + "' is not defined!");
+            }
+        }
         return viewItemDefinitions;
     }
 
