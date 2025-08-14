@@ -14,19 +14,32 @@
 
 package org.imixs.workflow.dataview;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
+import org.apache.poi.ss.usermodel.CellCopyPolicy;
+import org.apache.poi.ss.util.CellReference;
+import org.apache.poi.xssf.usermodel.XSSFRow;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.imixs.archive.core.SnapshotService;
+import org.imixs.workflow.FileData;
 import org.imixs.workflow.ItemCollection;
 import org.imixs.workflow.engine.DocumentService;
 import org.imixs.workflow.engine.WorkflowService;
+import org.imixs.workflow.exceptions.PluginException;
 import org.imixs.workflow.exceptions.QueryException;
 
 import jakarta.ejb.LocalBean;
 import jakarta.ejb.Stateless;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 
 /**
@@ -48,8 +61,9 @@ public class DataViewService implements Serializable {
     private static Logger logger = Logger.getLogger(DataViewService.class.getName());
 
     public static final String ITEM_WORKITEMREF = "$workitemref";
-
-    public static final String API_ERROR = "API_ERROR";
+    public static final int MAX_ROWS = 9999;
+    public static final String ERROR_API = "API_ERROR";
+    public static final String ERROR_CONFIG = "CONFIG_ERROR";
     public static final String ERROR_MISSING_DATA = "MISSING_DATA";
 
     @Inject
@@ -57,6 +71,12 @@ public class DataViewService implements Serializable {
 
     @Inject
     protected DocumentService documentService;
+
+    @Inject
+    protected SnapshotService snapshotService;
+
+    @Inject
+    protected Event<DataViewExportEvent> dataViewExportEvents;
 
     /**
      * This method loads a DataView Definition for a given dataview
@@ -132,4 +152,133 @@ public class DataViewService implements Serializable {
         }
         return result;
     }
+
+    /**
+     * This method returns the first excel poi template from the Data Definition
+     *
+     * @param dataViewDefinition with the attached fileData
+     * @throws PluginException if no template was found
+     *
+     */
+    public FileData loadTemplate(ItemCollection dataViewDefinition) throws PluginException {
+
+        // first filename
+        List<FileData> fileDataList = dataViewDefinition.getFileData();
+        if (fileDataList != null && fileDataList.size() > 0) {
+            String fileName = fileDataList.get(0).getName();
+            return snapshotService.getWorkItemFile(dataViewDefinition.getUniqueID(), fileName);
+        }
+
+        // we did not found the template!
+        throw new PluginException(DataViewController.class.getSimpleName(), ERROR_CONFIG,
+                "Missing Excel Export Template - check DataView definition!");
+
+    }
+
+    /**
+     * The method exports a dataset into a a POI XSSFWorkbook. The Workbook is
+     * loaded from a template data in a dataViewDefinition.
+     * <p>
+     * The export method sends a DataViewExportEvent. An observer CID bean can
+     * implement alternative exporters.
+     * With the event property 'completed' a client can signal that the export
+     * process is completed. Otherwise the default behavior will be adapted.
+     * 
+     * 
+     * @throws PluginException
+     */
+    public void poiExport(List<ItemCollection> dataset, ItemCollection dataViewDefinition,
+            List<ItemCollection> viewItemDefinitions,
+            FileData fileData) throws PluginException {
+        // load XSSFWorkbook
+        try (InputStream inputStream = new ByteArrayInputStream(fileData.getContent())) {
+            XSSFWorkbook doc = new XSSFWorkbook(inputStream);
+            // send DataViewExportEvent....
+            if (dataViewExportEvents != null) {
+                DataViewExportEvent event = new DataViewExportEvent(dataset, dataViewDefinition, viewItemDefinitions,
+                        doc);
+                dataViewExportEvents.fire(event); // found FileData?
+                if (!event.isCompleted()) {
+                    // Default behavior
+                    insertRows(dataset, dataViewDefinition, viewItemDefinitions, doc);
+                }
+            }
+
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            // write back the file
+            doc.write(byteArrayOutputStream);
+            doc.close();
+            byte[] newContent = byteArrayOutputStream.toByteArray();
+            fileData.setContent(newContent);
+
+        } catch (IOException e) {
+            throw new PluginException(DataViewPOIHelper.class.getSimpleName(), ERROR_CONFIG,
+                    "failed to update excel export: " + e.getMessage());
+        }
+    }
+
+    /**
+     * This helper method inserts for each ItemCollection of a DataSet a new row
+     * into a POI
+     * XSSFSheet based on a DataViewDefintion.
+     * 
+     * @param dataset
+     * @param referenceCell
+     * @param viewItemDefinitions
+     * @param doc
+     */
+    private void insertRows(List<ItemCollection> dataset, ItemCollection dataViewDefinition,
+            List<ItemCollection> viewItemDefinitions, XSSFWorkbook doc) {
+        String referenceCell = dataViewDefinition.getItemValueString("poi.referenceCell");
+
+        // NOTE: we only take the first sheet !
+        XSSFSheet sheet = doc.getSheetAt(0);
+
+        CellReference cr = new CellReference(referenceCell);
+        XSSFRow referenceRow = sheet.getRow(cr.getRow());
+        int referenceRowPos = referenceRow.getRowNum() + 1;
+        int rowPos = referenceRowPos;
+        // int lastRow = sheet.getLastRowNum();
+        int lastRow = 999;
+        logger.finest("Last rownum=" + lastRow);
+        sheet.shiftRows(rowPos, lastRow, dataset.size(), true, true);
+
+        for (ItemCollection workitem : dataset) {
+            logger.finest("......copy row...");
+
+            // now create a new line..
+            XSSFRow row = sheet.createRow(rowPos);
+            row.copyRowFrom(referenceRow, new CellCopyPolicy());
+            // insert values
+            int cellNum = 0;
+            for (ItemCollection itemDef : viewItemDefinitions) {
+                String type = itemDef.getItemValueString("item.type");
+                String name = itemDef.getItemValueString("item.name");
+                switch (type) {
+                    case "xs:double":
+                        row.getCell(cellNum).setCellValue(workitem.getItemValueDouble(name));
+                        break;
+                    case "xs:float":
+                        row.getCell(cellNum).setCellValue(workitem.getItemValueFloat(name));
+                        break;
+                    case "xs:int":
+                        row.getCell(cellNum).setCellValue(workitem.getItemValueInteger(name));
+                        break;
+                    case "xs:date":
+                        row.getCell(cellNum).setCellValue(workitem.getItemValueDate(name));
+                        break;
+
+                    default:
+                        row.getCell(cellNum).setCellValue(workitem.getItemValueString(name));
+                }
+                cellNum++;
+            }
+
+            rowPos++;
+        }
+        // delete reference row
+        sheet.shiftRows(referenceRowPos, lastRow + dataset.size(), -1, true, true);
+
+    }
+
 }

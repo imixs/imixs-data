@@ -33,7 +33,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
-import org.imixs.archive.core.SnapshotService;
 import org.imixs.workflow.FileData;
 import org.imixs.workflow.ItemCollection;
 import org.imixs.workflow.engine.DocumentService;
@@ -72,9 +71,6 @@ public class DataViewController extends ViewController {
 
     private static final long serialVersionUID = 1L;
 
-    public static final String ERROR_CONFIG = "CONFIG_ERROR";
-    public static final int MAX_ROWS = 9999;
-
     protected List<ItemCollection> viewItemDefinitions = null;
     protected ItemCollection dataViewDefinition = null;
     protected ItemCollection filter;
@@ -94,13 +90,7 @@ public class DataViewController extends ViewController {
     protected WorkflowService workflowService;
 
     @Inject
-    protected SnapshotService snapshotService;
-
-    @Inject
     protected WorkflowController workflowController;
-
-    @Inject
-    protected DataViewDefaultExporter dataViewDefaultExporter;
 
     @Inject
     protected DataViewService dataViewService;
@@ -345,39 +335,38 @@ public class DataViewController extends ViewController {
         // build query and prepare dataset
         run();
 
+        // Build target filename
         SimpleDateFormat dateformat = new SimpleDateFormat("yyyyMMddHHmm");
         String targetFileName = dataViewDefinition.getItemValueString("poi.targetFilename");
         if (targetFileName.isEmpty()) {
-            throw new PluginException(DataViewController.class.getSimpleName(), ERROR_CONFIG,
+            throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
                     "Missing Excel Export definition - check configuration!");
         }
+        targetFileName = targetFileName + "_" + dateformat.format(new Date()) + ".xlsx";
+
+        // start export
         logger.info("start export : " + targetFileName + "...");
         logger.fine(query);
 
         // load template
-        FileData fileData = loadTemplate();
+        FileData templateFileData = dataViewService.loadTemplate(dataViewDefinition);
 
-        if (fileData == null) {
-            // we did not found the template!
-            throw new PluginException(DataViewController.class.getSimpleName(), ERROR_CONFIG,
-                    "Missing Excel Export Template - check DataView definition!");
-        }
-        targetFileName = targetFileName + "_" + dateformat.format(new Date()) + ".xlsx";
         try {
             // test if query exceeds max count
             int totalCount = documentService.count(query);
-            if (totalCount > MAX_ROWS) {
-                throw new PluginException(DataViewController.class.getSimpleName(), ERROR_CONFIG,
-                        "Data can not be exported into Excel because dataset exceeds " + MAX_ROWS + " rows!");
+            if (totalCount > DataViewService.MAX_ROWS) {
+                throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
+                        "Data can not be exported into Excel because dataset exceeds " + DataViewService.MAX_ROWS
+                                + " rows!");
             }
             String sortBy = dataViewDefinition.getItemValueString("sort.by");
             if (sortBy.isEmpty()) {
                 sortBy = "$modified"; // default
             }
-            List<ItemCollection> invoices = documentService.find(query, MAX_ROWS, 0, sortBy,
+            List<ItemCollection> workitems = documentService.find(query, DataViewService.MAX_ROWS, 0, sortBy,
                     dataViewDefinition.getItemValueBoolean("sort.reverse"));
-            if (invoices.size() > 0) {
-                dataViewDefaultExporter.insertDataRows(invoices, dataViewDefinition, viewItemDefinitions, fileData);
+            if (workitems.size() > 0) {
+                dataViewService.poiExport(workitems, dataViewDefinition, viewItemDefinitions, templateFileData);
             }
 
             // create a temp event
@@ -389,39 +378,22 @@ public class DataViewController extends ViewController {
             // merge workitem fields (Workaround because custom forms did hard coded map to
             // workflowController instead of workitem
             filter.copy(workflowController.getWorkitem());
-            DataViewPOIHelper.poiUpdate(filter, fileData, poiConfig, workflowService);
+            DataViewPOIHelper.poiUpdate(filter, templateFileData, poiConfig, workflowService);
 
-            fileData.setName(targetFileName);
+            // Build target Filename
+
+            templateFileData.setName(targetFileName);
 
             // See:
             // https://stackoverflow.com/questions/9391838/how-to-provide-a-file-download-from-a-jsf-backing-bean
-            DataViewPOIHelper.downloadExcelFile(fileData);
+            DataViewPOIHelper.downloadExcelFile(templateFileData);
         } catch (IOException | QueryException e) {
-            throw new PluginException(DataViewController.class.getSimpleName(), ERROR_CONFIG,
+            throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
                     "Failed to generate Excel Export: " + e.getMessage());
         }
 
         // return "/pages/admin/excel_export_rechnungsausgang.jsf?faces-redirect=true";
         return "";
-    }
-
-    /**
-     * This method returns the first excel poi template from the Data Definition
-     *
-     * @param name in attribute txtname
-     *
-     *
-     */
-    private FileData loadTemplate() {
-
-        // first filename
-        List<FileData> fileDataList = dataViewDefinition.getFileData();
-        if (fileDataList != null && fileDataList.size() > 0) {
-            String fileName = fileDataList.get(0).getName();
-            return snapshotService.getWorkItemFile(dataViewDefinition.getUniqueID(), fileName);
-        }
-        // no file data available!
-        return null;
     }
 
 }
