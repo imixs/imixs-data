@@ -11,9 +11,9 @@
 	<modules>
 		<module>imixs-data-views</module>
 		<module>imixs-data-groups</module>
-
-		<!-- <module>imixs-data-documents</module>
 		<module>imixs-data-importer</module>
+		<!-- <module>imixs-data-documents</module>
+		
 		<module>imixs-data-exporter</module>
 		-->
 
