@@ -12,11 +12,7 @@
 		<module>imixs-data-views</module>
 		<module>imixs-data-groups</module>
 		<module>imixs-data-importer</module>
-		<!-- <module>imixs-data-documents</module>
-		
-		<module>imixs-data-exporter</module>
-		-->
-
+		<module>imixs-data-documents</module>
 	</modules>
 
 
@@ -98,6 +94,8 @@
 		<org.imixs.melman.version>2.1.0</org.imixs.melman.version>
 		<org.imixs.e-invoice.version>1.0.1</org.imixs.e-invoice.version>
 		<org.imixs.adapters.version>3.0.3</org.imixs.adapters.version>
+		<org.imixs.archive.version>3.1.3-SNAPSHOT</org.imixs.archive.version>
+		<org.imixs-e-invoice.version>1.0.1</org.imixs-e-invoice.version>
 		<apache.pdfbox.version>2.0.21</apache.pdfbox.version>
 		<microprofile.version>6.0</microprofile.version>
 		<microprofile-metrics.version>4.0</microprofile-metrics.version>
