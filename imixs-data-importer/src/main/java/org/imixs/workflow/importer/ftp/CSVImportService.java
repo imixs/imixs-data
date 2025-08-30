@@ -82,6 +82,7 @@ import jakarta.inject.Named;
 public class CSVImportService {
 
     public static final String DATA_ERROR = "DATA_ERROR";
+    public static final String CONFIG_ERROR = "CONFIG_ERROR";
     public static final String IMPORT_ERROR = "IMPORT_ERROR";
 
     private static Logger logger = Logger.getLogger(CSVImportService.class.getName());
@@ -135,19 +136,39 @@ public class CSVImportService {
 
             Properties sourceOptions = documentImportService.getOptionsProperties(event.getSource());
 
-            // get type..
+            // resolve type...
             type = sourceOptions.getProperty("type");
             if (type == null || type.isEmpty()) {
-                logger.info("set default type=workitem");
+                // if no type is set we default to 'workitem'
+                documentImportService.logMessage("│   ├── Missing property 'type' - set default 'workitem'", event);
                 type = "workitem";
-                documentImportService.logMessage(
-                        "│   ├── Missing property 'type' to import entities - set to default=workitem", event);
+            }
+            // if type is 'workitem' workflow configuration is mandatory
+            if ("workitem".equals(type)) {
+                String modelVersion = event.getSource()
+                        .getItemValueString(DocumentImportService.SOURCE_ITEM_MODELVERSION);
+                String workflowGroup = event.getSource()
+                        .getItemValueString(DocumentImportService.SOURCE_ITEM_WORKFLOWGROUP);
+                int taskID = event.getSource().getItemValueInteger(DocumentImportService.SOURCE_ITEM_TASK);
+                int eventID = event.getSource().getItemValueInteger(DocumentImportService.SOURCE_ITEM_EVENT);
+                if (modelVersion.isBlank() && workflowGroup.isBlank()) {
+                    String error = "either $workflowgroup or $modelversion must be set! ";
+                    documentImportService.logMessage("│   ├── ⚠️ Missing configuration: " + error, event);
+                    throw new PluginException(this.getClass().getName(), CONFIG_ERROR,
+                            error);
+                }
+                if (taskID == 0 || eventID == 0) {
+                    String error = "$taskID and $eventID must be set! ";
+                    documentImportService.logMessage("│   ├── ⚠️ Missing configuration: " + error, event);
+                    throw new PluginException(this.getClass().getName(), CONFIG_ERROR,
+                            error);
+                }
             }
 
             // get key ..
             keyField = sourceOptions.getProperty("key");
             if (keyField == null || keyField.isEmpty()) {
-                throw new PluginException(this.getClass().getName(), DATA_ERROR,
+                throw new PluginException(this.getClass().getName(), CONFIG_ERROR,
                         "Missing property 'key' to import entities");
             } else {
                 // _ prafix
@@ -164,14 +185,14 @@ public class CSVImportService {
 
             documentImportService.logMessage("│   ├── encoding=" + encoding, event);
             FileData fileData = null;
-            // if no server is given we exit
+            // if ftp server is defined, load from server...
             if (!ftpServer.isEmpty()) {
                 fileData = importFromFTP(ftpServer, csvSelector, encoding, event);
 
             } else {
                 // default try import from local path
                 Path path = Paths.get(csvSelector);
-                String fileName = path.getFileName().toString(); // "meineDatei.csv"
+                String fileName = path.getFileName().toString();
                 byte[] fileContent = Files.readAllBytes(Paths.get(csvSelector));
                 fileData = new FileData(fileName, fileContent, null, null);
             }
@@ -266,7 +287,8 @@ public class CSVImportService {
             boolean bWorkingDir = ftpClient.changeWorkingDirectory(csvFTPPath);
             if (bWorkingDir == true) {
 
-                documentImportService.logMessage("...working directory: " + ftpClient.printWorkingDirectory(), event);
+                documentImportService.logMessage("│   ├── working directory: " + ftpClient.printWorkingDirectory(),
+                        event);
 
                 logger.info("import file " + csvFilename + "...");
                 // String fullFileName = ftpPath + "/" + file.getName();
@@ -285,7 +307,8 @@ public class CSVImportService {
                         ftpClient.disconnect();
                     } catch (IOException e) {
                         documentImportService.logMessage(
-                                "...FTP error - failed to close connection after reading CSV File: " + e.getMessage(),
+                                "│   ├── FTP error - failed to close connection after reading CSV File: "
+                                        + e.getMessage(),
                                 event);
                         // we still can continue as we should already have read the file content...
                     }
@@ -300,7 +323,8 @@ public class CSVImportService {
                 }
 
             } else {
-                documentImportService.logMessage("...failed to change into working directory: " + csvFTPPath, event);
+                documentImportService.logMessage("│   ├── failed to change into working directory: " + csvFTPPath,
+                        event);
             }
 
         } catch (IOException e) {
@@ -309,7 +333,7 @@ public class CSVImportService {
                 int r = ftpClient.getReplyCode();
                 logger.severe("FTP ReplyCode=" + r);
                 documentImportService.logMessage(
-                        "...FTP file transfer failed (replyCode=" + r + ") : " + e.getMessage(),
+                        "│   ├── FTP file transfer failed (replyCode=" + r + ") : " + e.getMessage(),
                         event);
             }
             event.setResult(DocumentImportEvent.PROCESSING_ERROR);
@@ -324,7 +348,7 @@ public class CSVImportService {
                     ftpClient.disconnect();
                 }
             } catch (IOException e) {
-                documentImportService.logMessage("...FTP file transfer failed: " + e.getMessage(), event);
+                documentImportService.logMessage("│   ├── FTP file transfer failed: " + e.getMessage(), event);
                 event.setResult(DocumentImportEvent.PROCESSING_ERROR);
                 return null;
             }
@@ -476,7 +500,14 @@ public class CSVImportService {
         }
 
         // now we remove all existing entries not listed in the file
-        workitemsDeleted = removeDeprecatedDocuments(idCache, type, csvFileName);
+        try {
+            workitemsDeleted = removeDeprecatedDocuments(idCache, type, csvFileName, event);
+        } catch (QueryException e) {
+            // Catch Workflow Exceptions
+            String sError = "failed to remove deprecated documents : " + e.getMessage();
+            logger.severe(sError);
+            throw new PluginException(CSVImportService.class.getName(), DATA_ERROR, sError, e);
+        }
         log += "..." + workitemsTotal + " entries read -> " + workitemsImported + " new entries - " + workitemsUpdated
                 + " updates - " + workitemsDeleted + " deletions - " + workitemsFailed + " errors";
 
@@ -514,21 +545,44 @@ public class CSVImportService {
      * <p>
      * 
      * @return count of deletions
+     * @throws QueryException
+     * @throws PluginException
      */
-    private int removeDeprecatedDocuments(List<String> idCache, String type, String csvFileName) {
+    private int removeDeprecatedDocuments(List<String> idCache, String type, String csvFileName,
+            DocumentImportEvent event) throws QueryException, PluginException {
         int deletions = 0;
-        int firstResult = 0;
-        int blockSize = 100;
+        int pageIndex = 0;
+        int pageSize = 100;
+        int totalCount = 0;
 
         logger.info("..." + csvFileName + ": delete deprecated entries...");
         // now we remove all existing entries not listed in the file
-        String sQuery = "SELECT document FROM Document AS document WHERE document.type='" + type
-                + "' ORDER BY document.created ASC";
+        String query = "(type:" + type + ") ";
+
+        // read Workflow options (optional)
+        String modelVersion = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_MODELVERSION);
+        String workflowGroup = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_WORKFLOWGROUP);
+        if ("workitem".equalsIgnoreCase(type)
+                && (modelVersion.isEmpty() && workflowGroup.isEmpty())) {
+            throw new PluginException(this.getClass().getName(), DATA_ERROR,
+                    "Missing definition of $workflowgroup/$modelversion - type=='workitem' ! ");
+        }
+        if (!workflowGroup.isEmpty()) {
+            query = query + " AND ($workflowgroup:\"" + workflowGroup + "\") ";
+        } else {
+            // optional query modelversion...
+            if (!modelVersion.isEmpty()) {
+                query = query + " AND ($modelversion:\"" + modelVersion + "\") ";
+            }
+        }
+        logger.info(query);
 
         while (true) {
-            List<ItemCollection> entries = documentService.getDocumentsByQuery(sQuery, firstResult, blockSize);
-
+            // List<ItemCollection> entries = documentService.getDocumentsByQuery(sQuery,
+            // firstResult, blockSize);
+            List<ItemCollection> entries = documentService.find(query, pageSize, pageIndex, "$created", false);
             for (ItemCollection entity : entries) {
+                totalCount++;
                 String id = entity.getItemValueString("name");
                 if (!idCache.contains(id)) {
                     documentService.remove(entity);
@@ -536,9 +590,9 @@ public class CSVImportService {
                 }
             }
 
-            if (entries.size() == blockSize) {
-                firstResult = firstResult + blockSize;
-                logger.info("..." + csvFileName + ": " + firstResult + " entries verified (" + deletions
+            if (entries.size() == pageSize) {
+                pageIndex++;
+                logger.info("..." + csvFileName + ": " + totalCount + " entries verified (" + deletions
                         + " deletions)");
             } else {
                 // end

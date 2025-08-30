@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.logging.Logger;
 
 import org.imixs.workflow.ItemCollection;
+import org.imixs.workflow.engine.scheduler.Scheduler;
 import org.imixs.workflow.engine.scheduler.SchedulerController;
 import org.imixs.workflow.engine.scheduler.SchedulerService;
 
@@ -106,6 +107,7 @@ public class DocumentImportController extends SchedulerController {
     @Override
     public void saveConfiguration() {
         ItemCollection config = getConfiguration();
+        config.setItemValue(Scheduler.ITEM_SCHEDULER_CLASS, getSchedulerClass());
         List<Map> mapItemList = new ArrayList<Map>();
         // convert the option ItemCollection elements into a List of Map
         if (sources != null) {
