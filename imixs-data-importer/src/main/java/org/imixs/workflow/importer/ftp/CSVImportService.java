@@ -471,7 +471,8 @@ public class CSVImportService {
 
                 if (blockSize >= 100) {
                     blockSize = 0;
-                    logger.info("│   ├── " + csvFileName + ": " + workitemsTotal + " entries read (" + workitemsUpdated
+                    logger.info("│   ├── " + csvFileName + ": " + workitemsTotal + " entries read (" + workitemsImported
+                            + " imports , " + workitemsUpdated
                             + " updates)");
                     // flush lucene index!
                     indexUpdateService.updateIndex();
