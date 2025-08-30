@@ -54,11 +54,11 @@ import jakarta.servlet.http.HttpServletRequest;
 /**
  * The DataViewController is used to display a data view
  * <p>
- * The controller uses the uniqueId from the URL to load the definition.
- * The bean reads optional cached query data form
- * a session scoped cache EJB and reloads the last state. This is useful for
- * situations where the user navigates to a new page (e.g. open a workitem) and
- * late uses browser history back.
+ * The controller uses the uniqueId from the URL to load the definition. The
+ * bean reads optional cached query data form a session scoped cache EJB and
+ * reloads the last state. This is useful for situations where the user
+ * navigates to a new page (e.g. open a workitem) and late uses browser history
+ * back.
  * <p>
  * 
  * 
@@ -117,7 +117,7 @@ public class DataViewController extends ViewController {
     }
 
     /**
-     * This method loads the form information
+     * This method loads the form information and prefetches the data
      */
     public void onLoad() {
         String uniqueid = null;
@@ -166,13 +166,15 @@ public class DataViewController extends ViewController {
 
                 this.setSortReverse(dataViewDefinition.getItemValueBoolean("sort.reverse"));
                 this.setPageIndex(filter.getItemValueInteger("pageIndex"));
-                if (!filter.getItemValueString("query").isEmpty()) {
-                    query = filter.getItemValueString("query");
-                    // Prefetch data to update total count and page count
-                    viewHandler.getData(this);
-                }
+                // prefetch data
+                this.run();
+                // if (!filter.getItemValueString("query").isEmpty()) {
+                // query = filter.getItemValueString("query");
+                // // Prefetch data to update total count and page count
+                // viewHandler.getData(this);
+                // }
             }
-        } catch (QueryException e) {
+        } catch (QueryException | PluginException e) {
             logger.warning("Failed to load dataview definition: " + e.getMessage());
         }
 
@@ -321,9 +323,8 @@ public class DataViewController extends ViewController {
     }
 
     /**
-     * Exports data into a excel template processed by apache-poi.
-     * The method sends a DataViewExport event to allow clients to adapt the export
-     * process.
+     * Exports data into a excel template processed by apache-poi. The method sends
+     * a DataViewExport event to allow clients to adapt the export process.
      * 
      * @see DataViewExportEvent
      *
