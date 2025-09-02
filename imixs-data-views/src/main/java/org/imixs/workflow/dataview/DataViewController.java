@@ -241,10 +241,8 @@ public class DataViewController extends ViewController {
 
         // build new query from template
         query = dataViewDefinition.getItemValueString("query");
-
         query = parseQuery(query, filter);
         query = parseQuery(query, workflowController.getWorkitem());
-
         logger.info("query=" + query);
         filter.setItemValue("query", query);
 
@@ -262,20 +260,25 @@ public class DataViewController extends ViewController {
 
             // is date?
             if (filter.getItemValueDate(itemName) != null) {
-                String sDateFrom = "191401070000"; // because * did not work here
-                String sDateTo = "211401070000";
                 SimpleDateFormat dateformat = new SimpleDateFormat("yyyyMMddHHmm");
-
                 itemValue = dateformat.format(filter.getItemValueDate(itemName));
-
             }
-
             // Create regex pattern to match {itemName} (case-sensitive)
             // The Pattern.quote is used to escape any special regex characters in the
             // itemName
             // Replace all occurrences in the query case-insensitive.
             query = query.replaceAll("(?i)\\{" + Pattern.quote(itemName) + "\\}", itemValue);
         }
+
+        // if we still have {} replace them with *
+        // query=query.replace("{", "");
+        // query=query.replace("{", "");
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\{[^}]*\\}");
+        java.util.regex.Matcher matcher = pattern.matcher(query);
+        query = matcher.replaceAll("*");
+        // logger.info("query=" + query);
+        // remove **
+        query = query.replace("**", "*");
         return query;
     }
 
