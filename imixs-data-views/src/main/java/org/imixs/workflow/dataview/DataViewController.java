@@ -271,12 +271,9 @@ public class DataViewController extends ViewController {
         }
 
         // if we still have {} replace them with *
-        // query=query.replace("{", "");
-        // query=query.replace("{", "");
         java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\{[^}]*\\}");
         java.util.regex.Matcher matcher = pattern.matcher(query);
         query = matcher.replaceAll("*");
-        // logger.info("query=" + query);
         // remove **
         query = query.replace("**", "*");
         return query;
