@@ -4,7 +4,7 @@
 	<artifactId>imixs-data</artifactId>
 	<packaging>pom</packaging>
 	<name>Imixs-Data</name>
-	<version>1.0.0</version>
+	<version>1.0.1-SNAPSHOT</version>
 
 	<modules>
 		<module>imixs-data-views</module>
@@ -60,7 +60,7 @@
 		<connection>scm:git:git@github.com:imixs/imixs-data.git</connection>
 		<developerConnection>scm:git:git@github.com:imixs/imixs-data.git</developerConnection>
 		<url>https://github.com/imixs/imixs-data/</url>
-		<tag>imixs-data-1.0.0</tag>
+		<tag>HEAD</tag>
 	</scm>
 
 	<issueManagement>
