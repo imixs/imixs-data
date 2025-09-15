@@ -30,6 +30,7 @@ package org.imixs.workflow.importer.mail;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.Serializable;
 import java.io.StringReader;
 import java.net.URL;
@@ -84,7 +85,7 @@ public class IMAPOutlookAuthenticator implements IMAPAuthenticator, Serializable
         String imapUser = sourceConfig.getItemValueString(DocumentImportService.SOURCE_ITEM_USER);
         String imapPassword = sourceConfig.getItemValueString(DocumentImportService.SOURCE_ITEM_PASSWORD);
 
-        boolean debug = Boolean.getBoolean(sourceOptions.getProperty(IMAPImportService.OPTION_DEBUG, "false"));
+        boolean debug = Boolean.parseBoolean(sourceOptions.getProperty(IMAPImportService.OPTION_DEBUG, "false"));
 
         // create an empty properties object...
         // Properties props = System.getProperties();
@@ -160,6 +161,7 @@ public class IMAPOutlookAuthenticator implements IMAPAuthenticator, Serializable
         httpClient.setRequestMethod("POST");
         httpClient.setRequestProperty("User-Agent", "Mozilla/5.0");
         httpClient.setRequestProperty("Accept-Language", "en-US,en;q=0.5");
+        httpClient.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
 
         // Build Outlook Request...
         String scopes = "https://outlook.office365.com/.default";
@@ -182,8 +184,17 @@ public class IMAPOutlookAuthenticator implements IMAPAuthenticator, Serializable
             logger.fine("....access token = " + token);
             return token;
         } else {
-            logger.severe("Failed to receive a valid token!");
+            // read response error for more details
+            try (InputStream errorStream = httpClient.getErrorStream()) {
+                if (errorStream != null) {
+                    byte[] errorResponse = IMAPImportHelper.readAllBytes(errorStream);
+                    String errorMessage = new String(errorResponse);
+                    logger.severe("Error response: " + errorMessage);
+                }
+            }
+            logger.severe("Failed to receive a valid token! Response Code: " + responseCode);
             return null;
+
         }
     }
 
