@@ -78,10 +78,18 @@ With the optional parameter `maxpdfpages` you can controll how many pages of a P
 
 ### The OCRDocumentService
 
-The _OCRDocumentService_ is a general service to extract the textual information from file attachments during the processing life cycle independent form a BPMN model. The TikaDocumentService reacts on the CDI event 'BEFORE_PROCESS' and extracts the data automatically.
+The `OCRDocumentService` is a general service to extract the textual information from file attachments during the processing life cycle independent form a BPMN model. The TikaDocumentService reacts on the CDI event 'BEFORE_PROCESS' and extracts the data automatically. The environment variable `OCR_SERVICE_MODE` must be set to 'auto' to activate this service.
+If set to 'model' the `TikaPlugin` or the `TikaAdapter` must be used in a BPMN model to activate the text extraction.
 
-The environment variable _TIKA_SERVICE_MODE_ must be set to 'auto'.
-If set to 'model' the _TikaPlugin_ or the _TikaAdapter_ must be used in a BPMN model to activate the text extraction.
+The following optional environment settings are supported:
+
+| Environment Setting    | Type    | Description                                               | Example               |
+| ---------------------- | ------- | --------------------------------------------------------- | --------------------- |
+| `OCR_SERVICE_ENDPOINT` | URL     | The Tika Endpoint URI                                     | http://tika:9998/tika |
+| `OCR_STRATEGY`         | String  | NO_OCR, OCR_ONLY, OCR_AND_TEXT_EXTRACTION, AUTO (default) | NO_OCR                |
+| `OCR_SERVICE_MODE`     | String  | Must be set to AUTO                                       | AUTO                  |
+| `OCR_FILEPATTERN`      | String  | Optional Reges for a file pattern                         | `(pdf)$`              |
+| `OCR_MAXPDFPAGES`      | Integer | Max PDF Pages to be scanned                               | 10                    |
 
 ## OCR
 

@@ -69,6 +69,8 @@ public class TikaService {
     public static final String ENV_OCR_SERVICE_ENDPOINT = "ocr.service.endpoint";
     public static final String ENV_OCR_SERVICE_MODE = "ocr.service.mode";
     public static final String ENV_OCR_SERVICE_MAXFILESIZE = "ocr.service.maxfilesize";
+    public static final String ENV_OCR_SERVICE_FILEPATTERN = "ocr.service.filepattern";
+    public static final String ENV_OCR_SERVICE_MAXPDFPAGES = "ocr.service.maxpdfpages";
 
     public static final String ENV_OCR_STRATEGY = "ocr.strategy"; // NO_OCR, OCR_ONLY, OCR_AND_TEXT_EXTRACTION, AUTO
                                                                   // (default)

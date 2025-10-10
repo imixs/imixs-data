@@ -50,6 +50,18 @@ public class OCRDocumentService {
     String serviceMode;
 
     @Inject
+    @ConfigProperty(name = TikaService.ENV_OCR_SERVICE_MAXPDFPAGES, defaultValue = "20")
+    int ocrMaxPDFPages;
+
+    @Inject
+    @ConfigProperty(name = TikaService.ENV_OCR_SERVICE_FILEPATTERN)
+    Optional<String> ocrFilePattern;
+
+    @Inject
+    @ConfigProperty(name = TikaService.ENV_OCR_STRATEGY, defaultValue = TikaService.OCR_STRATEGY_AUTO)
+    String ocrStategy;
+
+    @Inject
     SnapshotService snapshotService;
 
     @Inject
@@ -72,7 +84,9 @@ public class OCRDocumentService {
             if (processingEvent.getEventType() == ProcessingEvent.BEFORE_PROCESS) {
                 ItemCollection workitem = processingEvent.getDocument();
                 try {
-                    ocrService.extractText(workitem, snapshotService.findSnapshot(workitem));
+                    ocrService.extractText(workitem, snapshotService.findSnapshot(workitem), ocrStategy, null,
+                            ocrFilePattern.orElse(null),
+                            ocrMaxPDFPages);
                 } catch (AdapterException e) {
                     throw new PluginException(e);
                 }
