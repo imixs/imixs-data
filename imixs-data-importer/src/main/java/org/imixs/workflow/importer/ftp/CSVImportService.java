@@ -40,9 +40,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.logging.Logger;
 
@@ -69,9 +71,9 @@ import jakarta.inject.Named;
 
 /**
  * The CSVImportService reacts on DocumentImportEvent and imports a CSV file
- * form a FTP data source.
+ * form a FTP data source or the local file system.
  * <p>
- * The implementation is based on org.apache.commons.net.ftp
+ * The FTP implementation is based on org.apache.commons.net.ftp
  * <p>
  * The CSV import can be customized by various options
  * 
@@ -187,7 +189,7 @@ public class CSVImportService {
             FileData fileData = null;
             // if ftp server is defined, load from server...
             if (!ftpServer.isEmpty()) {
-                fileData = importFromFTP(ftpServer, csvSelector, encoding, event);
+                fileData = readFileDataFromFTP(ftpServer, csvSelector, encoding, event);
 
             } else {
                 // default try import from local path
@@ -241,7 +243,8 @@ public class CSVImportService {
      * 
      * The method returns a byte array with the file raw data.
      */
-    protected FileData importFromFTP(String ftpServer, String csvSelector, String encoding, DocumentImportEvent event) {
+    protected FileData readFileDataFromFTP(String ftpServer, String csvSelector, String encoding,
+            DocumentImportEvent event) {
         FTPClient ftpClient = null;
         FileData fileData = null;
 
@@ -362,8 +365,6 @@ public class CSVImportService {
      * This method imports all entities from a csv file. The file must have one
      * header line.
      * <p>
-     * The method runs in a new transaction so processing exceptions can be caught.
-     * <p>
      * All existing entries not listed in the current file will be removed.
      * <p>
      * Each imported document will have a unique key in the item 'name' to be used
@@ -373,6 +374,16 @@ public class CSVImportService {
      * this case the entity will be processed. Otherwise it will be saved only.
      * <p>
      * The method returns a log . If an error occurs a plugin exception is thrown
+     * <p>
+     * Method: the implementation first reads all existing ItemCollection objects
+     * from the database and stores the hash into a local array. Next the method
+     * reads all entries from the CSV file and stores also the hash objects in a
+     * array. Next both arrays will be compared. If the compare results in not
+     * equal, the entry will be updated/imported. If the entry does no longer exist,
+     * the entry will be removed from the database. This operation runs in-memory
+     * and reduces database access.
+     * 
+     * 
      * 
      * @return ErrorMessage or empty String
      * @throws PluginException
@@ -384,8 +395,8 @@ public class CSVImportService {
         String log = "";
         int line = 0;
         String dataLine = null;
-        List<String> idCache = new ArrayList<>();
-
+        List<String> csvIndexCache = new ArrayList();
+        Map<String, RecordComparator> databaseCache = null;
         int workitemsTotal = 0;
         int workitemsImported = 0;
         int workitemsUpdated = 0;
@@ -422,8 +433,8 @@ public class CSVImportService {
             }
             if (type == null || type.isEmpty()) {
                 throw new PluginException(this.getClass().getName(), IMPORT_ERROR, "Missing type to import entities");
-
             }
+            databaseCache = readDocumentsFromDatabase(fields, type, event);
 
             logger.info("...object type=" + type);
             logger.info("...key field=" + keyField);
@@ -434,39 +445,52 @@ public class CSVImportService {
                 blockSize++;
                 line++;
                 workitemsTotal++;
-                ItemCollection entity = readEntity(dataLine, fields, type);
+                ItemCollection entity = readEntity(dataLine, fields, type, keyField);
+                if (entity == null) {
+                    logger.warning("...Incorrect data line: " + dataLine);
+                    continue;
+                }
 
-                String keyItemValue = entity.getItemValueString(keyField);
-                // replace txtName by the key field
-                entity.replaceItemValue("name", keyItemValue);
-
+                // store id into cache
+                String keyItemValue = entity.getItemValueString("name");
+                if (keyItemValue.isBlank()) {
+                    logger.warning("KeyField '" + keyField + "' is empty - line:" + line);
+                    continue;
+                }
+                if (csvIndexCache.contains(keyItemValue)) {
+                    logger.warning("...WARNING duplicate entry found: " + keyField + "=" + keyItemValue);
+                    documentImportService
+                            .logMessage("...WARNING duplicate entry found: " + keyField + "=" + keyItemValue, event);
+                    continue;
+                }
+                csvIndexCache.add(keyItemValue);
                 // Add import Information
                 entity.setItemValue("document.import.type", event.getSource().getItemValue("type"));
                 entity.setItemValue("document.import.selector", event.getSource().getItemValue("selector"));
                 entity.setItemValue("document.import.options", event.getSource().getItemValue("options"));
 
-                // store id into cache
-                if (idCache.contains(keyItemValue)) {
-                    logger.warning("...WARNING duplicate entry found: " + keyField + "=" + keyItemValue);
-                    documentImportService
-                            .logMessage("...WARNING duplicate entry found: " + keyField + "=" + keyItemValue, event);
-                } else {
-                    idCache.add(keyItemValue);
+                RecordComparator record = new RecordComparator(entity, fields);
+
+                // test if entity already exists in database....
+                RecordComparator existingIndex = databaseCache.get(record.id);
+                if (existingIndex != null && existingIndex.hash == record.hash) {
+                    // we have an existing record
+                    // now let's see if the data has changed....
+                    // no changes!
+                    continue;
                 }
-                // test if entity already exists....
-                ItemCollection oldEntity = findEntityByName(entity.getItemValueString("Name"), type);
-                if (oldEntity == null) {
-                    processEntity(entity, modelVersion, workflowGroup, taskID, eventID);
+                if (existingIndex == null) {
+                    // create a new entry...
+                    entity.task(taskID);
+                    processEntity(entity, modelVersion, workflowGroup, eventID);
                     workitemsImported++;
                 } else {
-                    // test if modified....
-                    if (!isEqualEntity(oldEntity, entity, fields)) {
-                        logger.fine("update existing entity: " + oldEntity.getUniqueID());
-                        // copy all entries from the import into the existing entity
-                        oldEntity.replaceAllItems(entity.getAllItems());
-                        processEntity(oldEntity, modelVersion, workflowGroup, taskID, eventID);
-                        workitemsUpdated++;
-                    }
+                    // update existing entity...
+                    logger.fine("update existing entity");
+                    // copy all entries from the import into the existing entity
+                    existingIndex.entity.replaceAllItems(entity.getAllItems());
+                    processEntity(existingIndex.entity, modelVersion, workflowGroup, eventID);
+                    workitemsUpdated++;
                 }
 
                 if (blockSize >= 100) {
@@ -500,15 +524,18 @@ public class CSVImportService {
             }
         }
 
-        // now we remove all existing entries not listed in the file
-        try {
-            workitemsDeleted = removeDeprecatedDocuments(idCache, type, csvFileName, event);
-        } catch (QueryException e) {
-            // Catch Workflow Exceptions
-            String sError = "failed to remove deprecated documents : " + e.getMessage();
-            logger.severe(sError);
-            throw new PluginException(CSVImportService.class.getName(), DATA_ERROR, sError, e);
+        // now we remove all existing entries no longer listed in the file
+        Set<String> databaseKeys = databaseCache.keySet();
+        for (String key : databaseKeys) {
+
+            if (!csvIndexCache.contains(key)) {
+                // remove old record!
+                documentService.remove(databaseCache.get(key).entity);
+                workitemsDeleted++;
+            }
+
         }
+
         log += "..." + workitemsTotal + " entries read -> " + workitemsImported + " new entries - " + workitemsUpdated
                 + " updates - " + workitemsDeleted + " deletions - " + workitemsFailed + " errors";
 
@@ -522,11 +549,11 @@ public class CSVImportService {
      * simple save.
      * 
      */
-    private void processEntity(ItemCollection entity, String modelVersion, String workflowGroup, int taskID,
+    private void processEntity(ItemCollection entity, String modelVersion, String workflowGroup,
             int eventID) {
-        if (taskID > 0 && eventID > 0) {
+        if (eventID > 0) {
             // process
-            entity.model(modelVersion).workflowGroup(workflowGroup).task(taskID).event(eventID);
+            entity.model(modelVersion).workflowGroup(workflowGroup).event(eventID);
             try {
                 workflowService.processWorkItemByNewTransaction(entity);
             } catch (EJBException | AccessDeniedException | ProcessingErrorException | PluginException
@@ -542,27 +569,27 @@ public class CSVImportService {
     }
 
     /**
-     * This helper method deletes all documents not listed in the ID cache.
-     * <p>
+     * This helper method reads all existing documents and stores the hash index in
+     * a local map index.
      * 
      * @return count of deletions
      * @throws QueryException
      * @throws PluginException
      */
-    private int removeDeprecatedDocuments(List<String> idCache, String type, String csvFileName,
+    private Map<String, RecordComparator> readDocumentsFromDatabase(List<String> fields, String type,
             DocumentImportEvent event) throws QueryException, PluginException {
-        int deletions = 0;
         int pageIndex = 0;
         int pageSize = 100;
         int totalCount = 0;
+        Map<String, RecordComparator> result = new HashMap<>();
 
-        logger.info("..." + csvFileName + ": delete deprecated entries...");
-        // now we remove all existing entries not listed in the file
+        String modelVersion = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_MODELVERSION);
+        String workflowGroup = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_WORKFLOWGROUP);
+        logger.info("│   ├── read entries from database...");
+        // now we store the hash from each document in a hash index table.
         String query = "(type:" + type + ") ";
 
         // read Workflow options (optional)
-        String modelVersion = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_MODELVERSION);
-        String workflowGroup = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_WORKFLOWGROUP);
         if ("workitem".equalsIgnoreCase(type)
                 && (modelVersion.isEmpty() && workflowGroup.isEmpty())) {
             throw new PluginException(this.getClass().getName(), DATA_ERROR,
@@ -576,31 +603,25 @@ public class CSVImportService {
                 query = query + " AND ($modelversion:\"" + modelVersion + "\") ";
             }
         }
-        logger.info(query);
-
+        logger.info("│   ├── query=" + query);
         while (true) {
-            // List<ItemCollection> entries = documentService.getDocumentsByQuery(sQuery,
-            // firstResult, blockSize);
             List<ItemCollection> entries = documentService.find(query, pageSize, pageIndex, "$created", false);
             for (ItemCollection entity : entries) {
                 totalCount++;
+
                 String id = entity.getItemValueString("name");
-                if (!idCache.contains(id)) {
-                    documentService.remove(entity);
-                    deletions++;
-                }
+                result.put(id, new RecordComparator(entity, fields));
             }
 
             if (entries.size() == pageSize) {
                 pageIndex++;
-                logger.info("..." + csvFileName + ": " + totalCount + " entries verified (" + deletions
-                        + " deletions)");
+                logger.info("│   ├── " + totalCount + " entries read");
             } else {
                 // end
                 break;
             }
         }
-        return deletions;
+        return result;
     }
 
     /**
@@ -612,7 +633,7 @@ public class CSVImportService {
      * @param fieldnames
      * @return
      */
-    private ItemCollection readEntity(String data, List<String> fieldnames, String type) {
+    private ItemCollection readEntity(String data, List<String> fieldnames, String type, String keyField) {
         ItemCollection result = new ItemCollection();
         // add type...
         result.replaceItemValue("type", type);
@@ -637,6 +658,10 @@ public class CSVImportService {
                 break;
             }
         }
+        // replace 'name' by the key field
+        String keyItemValue = result.getItemValueString(keyField);
+        result.replaceItemValue("name", keyItemValue);
+
         return result;
     }
 
@@ -692,48 +717,32 @@ public class CSVImportService {
     }
 
     /**
-     * This method compares two entities based on the csv fields
-     * 
-     * @param oldEntity
-     * @param entity
-     * @param fields
-     * @return
+     * Local entity record to compare entities by a hash code
      */
-    private boolean isEqualEntity(ItemCollection oldEntity, ItemCollection entity, List<String> fields) {
-        for (String itemName : fields) {
-            if (!entity.getItemValue(itemName).equals(oldEntity.getItemValue(itemName))) {
-                // not equal
-                return false;
-            }
-        }
-        return true;
-    }
+    class RecordComparator {
+        String id;
+        int hash;
+        ItemCollection entity;
 
-    /**
-     * This method finds a entity by the attribute 'Name'
-     * <p>
-     * 
-     * @param key  - name of the object (name)
-     * @param type - type of the object
-     * 
-     * @return entity or null if no entity with the given name exists
-     */
-    public ItemCollection findEntityByName(String key, String type) {
-
-        String searchTerm = "(type:\"" + type + "\" AND name:\"" + key + "\")";
-        Collection<ItemCollection> col;
-        try {
-            col = documentService.find(searchTerm, 1, 0);
-            if (col.size() > 0) {
-                return col.iterator().next();
-            }
-        } catch (QueryException e) {
-            logger.warning(e.getMessage());
+        public RecordComparator(ItemCollection entity, List<String> fields) {
+            this.entity = entity;
+            this.id = entity.getItemValueString("name");
+            hash = generateHash(entity, fields);
         }
 
-        // no order found
-        return null;
-
+        /**
+         * Builds a hashcode from a
+         * 
+         * @param wokritem
+         * @param fields
+         * @return
+         */
+        private int generateHash(ItemCollection wokritem, List<String> fields) {
+            String result = "";
+            for (String item : fields) {
+                result = result + wokritem.getItemValueString(item);
+            }
+            return result.hashCode();
+        }
     }
-
 }
