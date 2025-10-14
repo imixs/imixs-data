@@ -488,8 +488,9 @@ public class CSVImportService {
                     // update existing entity...
                     logger.fine("update existing entity");
                     // copy all entries from the import into the existing entity
-                    existingIndex.entity.replaceAllItems(entity.getAllItems());
-                    processEntity(existingIndex.entity, modelVersion, workflowGroup, eventID);
+                    ItemCollection existingEntity = documentService.load(existingIndex.uniqueId);
+                    existingEntity.replaceAllItems(entity.getAllItems());
+                    processEntity(existingEntity, modelVersion, workflowGroup, eventID);
                     workitemsUpdated++;
                 }
 
@@ -527,10 +528,10 @@ public class CSVImportService {
         // now we remove all existing entries no longer listed in the file
         Set<String> databaseKeys = databaseCache.keySet();
         for (String key : databaseKeys) {
-
             if (!csvIndexCache.contains(key)) {
                 // remove old record!
-                documentService.remove(databaseCache.get(key).entity);
+                ItemCollection deprecatedEntity = documentService.load(databaseCache.get(key).uniqueId);
+                documentService.remove(deprecatedEntity);
                 workitemsDeleted++;
             }
 
@@ -722,12 +723,12 @@ public class CSVImportService {
     class RecordComparator {
         String id;
         int hash;
-        ItemCollection entity;
+        String uniqueId;
 
         public RecordComparator(ItemCollection entity, List<String> fields) {
-            this.entity = entity;
             this.id = entity.getItemValueString("name");
-            hash = generateHash(entity, fields);
+            this.hash = generateHash(entity, fields);
+            this.uniqueId = entity.getUniqueID();
         }
 
         /**
