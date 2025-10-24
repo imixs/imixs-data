@@ -201,7 +201,7 @@ public class CSVImportService {
 
             if (fileData != null) {
                 documentImportService
-                        .logMessage("│   ├── ✅ file '" + fileData.getName() + "' successful read ▷ "
+                        .logMessage("│   ├── ⚙️ file '" + fileData.getName() + "' processing ▷ "
                                 + fileData.getContent().length + " bytes", event);
 
                 String lastChecksum = event.getSource().getItemValueString("csv.checksum");
