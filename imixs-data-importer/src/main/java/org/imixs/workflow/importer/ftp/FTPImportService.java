@@ -30,6 +30,9 @@ package org.imixs.workflow.importer.ftp;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.List;
+import java.util.Properties;
 import java.util.logging.Logger;
 
 import org.apache.commons.net.ftp.FTP;
@@ -51,20 +54,32 @@ import jakarta.ejb.EJB;
 import jakarta.ejb.Stateless;
 import jakarta.enterprise.event.Observes;
 import jakarta.ws.rs.core.MediaType;
+import net.schmizz.sshj.SSHClient;
+import net.schmizz.sshj.sftp.RemoteFile;
+import net.schmizz.sshj.sftp.RemoteResourceInfo;
+import net.schmizz.sshj.sftp.SFTPClient;
+import net.schmizz.sshj.transport.verification.HostKeyVerifier;
 
 /**
- * The FTPImportService reacts on DocumentImportEvent and processes a FTP data
- * source.
+ * The FTPImportService reacts on DocumentImportEvent and processes an
+ * FTP/FTPS/SFTP data source.
  * <p>
- * The implementation is based on org.apache.commons.net.ftp
- * 
- * @author rsoika
+ * Supported types:
+ * - type=FTP
+ * - type=FTPS
+ * - type=SFTP
+ * <p>
+ * FTP/FTPS uses Apache Commons Net.
+ * SFTP uses SSHJ.
  *
+ * @author
+ *         Imixs Software Solutions GmbH
+ *         Ralph Soika
  */
 @Stateless
 public class FTPImportService {
 
-    private static Logger logger = Logger.getLogger(FTPImportService.class.getName());
+    private static final Logger logger = Logger.getLogger(FTPImportService.class.getName());
 
     @EJB
     WorkflowService workflowService;
@@ -76,10 +91,8 @@ public class FTPImportService {
     DocumentImportService documentImportService;
 
     /**
-     * This method reacts on a CDI ImportEvent and reads documents form a ftp
+     * Reacts on a DocumentImportEvent and imports files from an FTP/FTPS/SFTP
      * server.
-     * 
-     * 
      */
     public void onEvent(@Observes DocumentImportEvent event) {
 
@@ -89,153 +102,204 @@ public class FTPImportService {
             return;
         }
 
-        if (!"FTP".equalsIgnoreCase(event.getSource().getItemValueString("type"))) {
-            // ignore data source
-            logger.finest("...... type '" + event.getSource().getItemValueString("type") + "' skiped.");
+        String type = event.getSource().getItemValueString("type");
+        if (!List.of("FTP", "FTPS", "SFTP").contains(type.toUpperCase())) {
+            logger.finest("...... type '" + type + "' skipped.");
             return;
         }
 
-        String ftpServer = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_SERVER);
-        String ftpPort = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_PORT);
-        String ftpUser = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_USER);
-        String ftpPassword = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_PASSWORD);
-        String ftpPath = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_SELECTOR);
+        String server = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_SERVER);
+        String port = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_PORT);
+        String user = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_USER);
+        String password = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_PASSWORD);
+        String path = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_SELECTOR);
 
-        if (!ftpPath.startsWith("/") && !ftpPath.startsWith("./")) {
-            ftpPath = "/" + ftpPath;
-        }
-        if (!ftpPath.endsWith("/")) {
-            ftpPath = ftpPath + "/";
-        }
+        // test insecure ssl
+        Properties sourceOptions = documentImportService.getOptionsProperties(event.getSource());
+        boolean insecureSSH = Boolean.parseBoolean(sourceOptions.getProperty("ftp.insecure", "false"));
+        String ftpSubProtocol = sourceOptions.getProperty("ftp.subprotocol", "FTP");
+        documentImportService.logMessage("├── 🗄️ FTP Import: server: " + ftpSubProtocol + "://" + server, event);
 
-        // if no server is given we exit
-        if (ftpServer.isEmpty()) {
-            logger.warning("...... no server specified!");
+        if (server == null || server.isEmpty()) {
+            documentImportService.logMessage("├── ⚠️ No server specified!", event);
             return;
         }
 
-        if (ftpPort.isEmpty()) {
-            // set default port
-            ftpPort = "21";
+        if (port == null || port.isEmpty()) {
+            port = type.equalsIgnoreCase("SFTP") ? "22" : "21";
         }
 
-        FTPClient ftpClient = null;
         try {
-            logger.finest("......read directories ...");
+            if ("SFTP".equalsIgnoreCase(ftpSubProtocol)) {
+                processSftp(event, server, port, user, password, path, insecureSSH);
+            }
+            if ("FTPS".equalsIgnoreCase(ftpSubProtocol)) {
+                processFtps(event, server, port, user, password, path, true);
+            }
+            if ("FTP".equalsIgnoreCase(ftpSubProtocol)) {
+                processFtps(event, server, port, user, password, path, false);
+            }
 
-            documentImportService.logMessage("├── 🗄️ connecting to FTP server: " + ftpServer, event);
+            event.setResult(DocumentImportEvent.PROCESSING_COMPLETED);
+        } catch (Exception e) {
+            logger.severe("File transfer error: " + e.getMessage());
+            documentImportService.logMessage("├── ⚠️ Transfer failed: " + e.getMessage(), event);
+            event.setResult(DocumentImportEvent.PROCESSING_ERROR);
+        }
+    }
 
-            // TLS
-            ftpClient = new FTPSClient("TLS", false);
-            ftpClient.setControlEncoding("UTF-8");
-            ftpClient.connect(ftpServer, Integer.parseInt(ftpPort));
-            if (ftpClient.login(ftpUser, ftpPassword) == false) {
-                documentImportService.logMessage("│   ├── ⚠️ FTP file transfer failed: login failed!", event);
-                event.setResult(DocumentImportEvent.PROCESSING_ERROR);
-                return;
+    /*
+     * ==========================================================
+     * FTP + FTPS Implementation (Apache Commons Net)
+     * ==========================================================
+     */
+
+    private void processFtps(DocumentImportEvent event, String host, String port, String user, String pass, String path,
+            boolean tls)
+            throws Exception {
+
+        FTPClient ftpClient = tls ? new FTPSClient("TLS", false) : new FTPClient();
+        try {
+            documentImportService.logMessage(
+                    "│   ├── 🔐 Connecting to " + (tls ? "FTPS" : "FTP") + " server: " + host + "...",
+                    event);
+            ftpClient.connect(host, Integer.parseInt(port));
+            if (!ftpClient.login(user, pass)) {
+                throw new IOException("Login failed for user " + user);
             }
 
             ftpClient.enterLocalPassiveMode();
-            logger.finest("...... FileType=" + FTP.BINARY_FILE_TYPE);
             ftpClient.setFileType(FTP.BINARY_FILE_TYPE);
             ftpClient.setControlEncoding("UTF-8");
 
-            // try to enter the working directory....
-            boolean bWorkingDir = ftpClient.changeWorkingDirectory(ftpPath);
-            if (bWorkingDir == true) {
-
-                documentImportService.logMessage("│   ├── working directory: " + ftpClient.printWorkingDirectory(),
-                        event);
-                /*
-                 * create a new workitem for each document
-                 */
-                FTPFile[] allFiles = ftpClient.listFiles();
-                int count = 0;
-                if (allFiles.length > 0) {
-                    documentImportService.logMessage("│   ├── " + allFiles.length + " files found ", event);
-
-                    for (FTPFile file : allFiles) {
-                        // if this is a directory or symlink then we do ignore this entry
-                        if (!file.isFile()) {
-                            documentImportService.logMessage(
-                                    "│   ├── ⚠️ '" + file.getName() + "' is not a valid file, object will be ignored!",
-                                    event);
-                            continue;
-                        }
-                        logger.info("import file " + file.getName() + "...");
-                        // String fullFileName = ftpPath + "/" + file.getName();
-                        try (ByteArrayOutputStream is = new ByteArrayOutputStream();) {
-                            ftpClient.retrieveFile(file.getName(), is);
-                            byte[] rawData = is.toByteArray();
-                            if (rawData != null && rawData.length > 0) {
-                                logger.finest("......file '" + file.getName() + "' successful read - bytes size = "
-                                        + rawData.length);
-                                // create new workitem
-                                createWorkitem(event.getSource(), file.getName(), rawData);
-                                documentImportService.logMessage("│   ├── ☑️ imported '" + file.getName() + "'", event);
-                                count++;
-                            } else {
-                                documentImportService.logMessage("│   ├── ⚠️ invalid file content '" + file.getName()
-                                        + "' - file will be deleted!", event);
-                            }
-                            // finally delete the file....
-                            ftpClient.deleteFile(file.getName());
-                        } catch (AccessDeniedException | ProcessingErrorException | PluginException
-                                | ModelException e) {
-
-                            documentImportService.logMessage("│   ├── ⚠️ FTP import failed: " + e.getMessage(), event);
-                            event.setResult(DocumentImportEvent.PROCESSING_ERROR);
-                            return;
-                        }
-                    }
-                    documentImportService.logMessage("└── ✅ Completed - " + count + " new files imported.", event);
-                } else {
-                    documentImportService.logMessage(
-                            "└── ✅ Completed - no files found, directory '" + ftpPath + "' is empty", event);
-                }
-            } else {
-                documentImportService.logMessage("└── ⚠️ failed to change into working directory: " + ftpPath, event);
+            boolean changed = ftpClient.changeWorkingDirectory(path);
+            if (!changed) {
+                throw new IOException("Unable to change working directory to: " + path);
             }
 
-        } catch (IOException e) {
-            logger.severe("FTP I/O Error: " + e.getMessage());
-            int r = ftpClient.getReplyCode();
-            logger.severe("FTP ReplyCode=" + r);
-
-            documentImportService.logMessage("...FTP file transfer failed (replyCode=" + r + ") : " + e.getMessage(),
-                    event);
-            event.setResult(DocumentImportEvent.PROCESSING_ERROR);
-            return;
-
-        } finally {
-            // do logout....
-            try {
-
-                ftpClient.logout();
-                ftpClient.disconnect();
-            } catch (IOException e) {
-                documentImportService.logMessage("└── ⚠️ FTP file transfer failed: " + e.getMessage(), event);
-                event.setResult(DocumentImportEvent.PROCESSING_ERROR);
+            FTPFile[] files = ftpClient.listFiles();
+            if (files.length == 0) {
+                documentImportService.logMessage("└── ✅ Directory empty: " + path, event);
                 return;
             }
+            documentImportService.logMessage("│   ├── connection successful!", event);
+            for (FTPFile file : files) {
+                if (!file.isFile())
+                    continue;
+
+                try (ByteArrayOutputStream os = new ByteArrayOutputStream()) {
+                    ftpClient.retrieveFile(file.getName(), os);
+                    byte[] data = os.toByteArray();
+                    if (data.length > 0) {
+                        createWorkitem(event.getSource(), file.getName(), data);
+                        try {
+                            ftpClient.deleteFile(file.getName());
+                        } catch (IOException ee) {
+                            documentImportService.logMessage(
+                                    "│   ├── ⚠️ Failed to remove file from source directory: " + ee.getMessage(),
+                                    event);
+                            throw ee;
+                        }
+                        documentImportService.logMessage("│   ├── ✅ Imported " + file.getName(), event);
+                    } else {
+                        documentImportService.logMessage("│   ├── ⚠️ Empty file ignored: " + file.getName(), event);
+                    }
+                }
+            }
+            documentImportService.logMessage("└── ✅ Completed.", event);
+        } finally {
+            try {
+                ftpClient.logout();
+                ftpClient.disconnect();
+            } catch (IOException ignored) {
+            }
         }
-
-        // completed
-        event.setResult(DocumentImportEvent.PROCESSING_COMPLETED);
-
     }
 
-    /**
-     * Creates and processes a new workitem with a given filedata
-     * 
-     * @return
-     * @throws ModelException
-     * @throws PluginException
-     * @throws ProcessingErrorException
-     * @throws AccessDeniedException
+    /*
+     * ==========================================================
+     * SFTP Implementation (SSHJ)
+     * ==========================================================
      */
+
+    private void processSftp(DocumentImportEvent event, String host, String port, String user, String pass, String path,
+            boolean insecureSSH) throws Exception {
+
+        documentImportService.logMessage("│   ├── 🔐 Connecting to SFTP server: " + host + "...", event);
+        SSHClient ssh = new SSHClient();
+        if (insecureSSH) {
+            // insecure mode - allow all hosts
+            ssh.addHostKeyVerifier(new HostKeyVerifier() {
+                @Override
+                public boolean verify(String hostname, int port, java.security.PublicKey key) {
+                    // ignore key validation
+                    return true;
+                }
+
+                @Override
+                public List<String> findExistingAlgorithms(String hostname, int port) {
+                    return java.util.Collections.emptyList();
+                }
+            });
+        } else {
+            // secure mode
+            ssh.loadKnownHosts();
+        }
+
+        ssh.connect(host, Integer.parseInt(port));
+        ssh.authPassword(user, pass);
+
+        try (SFTPClient sftp = ssh.newSFTPClient()) {
+            List<RemoteResourceInfo> files = sftp.ls(path);
+            documentImportService.logMessage("│   ├── connection successful!", event);
+
+            if (files.isEmpty()) {
+                documentImportService.logMessage("└── ✅ Directory empty: " + path, event);
+                return;
+            }
+
+            for (RemoteResourceInfo file : files) {
+                if (file.isDirectory())
+                    continue;
+
+                try (RemoteFile remoteFile = sftp.open(file.getPath());
+                        InputStream is = remoteFile.new RemoteFileInputStream();
+                        ByteArrayOutputStream os = new ByteArrayOutputStream()) {
+                    is.transferTo(os);
+                    byte[] data = os.toByteArray();
+                    if (data.length > 0) {
+                        createWorkitem(event.getSource(), file.getName(), data);
+                        try {
+                            sftp.rm(file.getPath());
+                        } catch (IOException ee) {
+                            documentImportService.logMessage(
+                                    "│   ├── ⚠️ Failed to remove file from source directory: " + ee.getMessage(),
+                                    event);
+                            throw ee;
+                        }
+                        documentImportService.logMessage("│   ├── ✅ Imported " + file.getName(), event);
+                    } else {
+                        documentImportService.logMessage("│   ├── ⚠️ Empty file ignored: " + file.getName(), event);
+                    }
+                }
+            }
+
+            documentImportService.logMessage("└── ✅ Completed.", event);
+        } finally {
+            ssh.close();
+            ssh.disconnect();
+        }
+    }
+
+    /*
+     * ==========================================================
+     * Workitem creation (unchanged)
+     * ==========================================================
+     */
+
     public ItemCollection createWorkitem(ItemCollection source, String fileName, byte[] rawData)
             throws AccessDeniedException, ProcessingErrorException, PluginException, ModelException {
+
         ItemCollection workitem = new ItemCollection();
         workitem.model(source.getItemValueString(DocumentImportService.SOURCE_ITEM_MODELVERSION));
         workitem.task(source.getItemValueInteger(DocumentImportService.SOURCE_ITEM_TASK));
@@ -249,14 +313,13 @@ public class FTPImportService {
 
         String contentType = MediaType.WILDCARD;
         if (fileName.toLowerCase().endsWith(".pdf")) {
-            contentType = "Application/PDF";
+            contentType = "application/pdf";
         }
 
         FileData fileData = new FileData(fileName, rawData, contentType, null);
         workitem.addFileData(fileData);
-        workitem = workflowService.processWorkItemByNewTransaction(workitem);
 
+        workitem = workflowService.processWorkItemByNewTransaction(workitem);
         return workitem;
     }
-
 }
