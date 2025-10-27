@@ -251,7 +251,7 @@ public class FTPImportService {
         if (fileName.toLowerCase().endsWith(".pdf")) {
             contentType = "Application/PDF";
         }
-        // set file data
+
         FileData fileData = new FileData(fileName, rawData, contentType, null);
         workitem.addFileData(fileData);
         workitem = workflowService.processWorkItemByNewTransaction(workitem);

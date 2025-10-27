@@ -460,7 +460,7 @@ public class CSVImportService {
                 if (csvIndexCache.contains(keyItemValue)) {
                     logger.warning("...WARNING duplicate entry found: " + keyField + "=" + keyItemValue);
                     documentImportService
-                            .logMessage("...WARNING duplicate entry found: " + keyField + "=" + keyItemValue, event);
+                            .logMessage("│   ├── ⚠️ duplicate entry found: " + keyField + "=" + keyItemValue, event);
                     continue;
                 }
                 csvIndexCache.add(keyItemValue);
