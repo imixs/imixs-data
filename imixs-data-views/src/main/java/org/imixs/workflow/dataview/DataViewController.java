@@ -25,6 +25,7 @@ package org.imixs.workflow.dataview;
 
 import java.io.IOException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -242,8 +243,11 @@ public class DataViewController extends ViewController {
         // build new query from template
         query = dataViewDefinition.getItemValueString("query");
         query = parseQuery(query, filter);
-        query = parseQuery(query, workflowController.getWorkitem());
-        logger.info("query=" + query);
+        // query = parseQuery(query, workflowController.getWorkitem());
+
+        if (dataViewDefinition.getItemValueBoolean("debug")) {
+            logger.info("🪲 query=" + query);
+        }
         filter.setItemValue("query", query);
 
         // Prefetch data to update total count and page count
@@ -265,9 +269,13 @@ public class DataViewController extends ViewController {
             }
             // Create regex pattern to match {itemName} (case-sensitive)
             // The Pattern.quote is used to escape any special regex characters in the
-            // itemName
-            // Replace all occurrences in the query case-insensitive.
-            query = query.replaceAll("(?i)\\{" + Pattern.quote(itemName) + "\\}", itemValue);
+            // itemName.
+            // Only in case we have a value, we replace all occurrences in the query
+            // case-insensitive.
+            itemValue = itemValue.trim();
+            if (!itemValue.isEmpty()) {
+                query = query.replaceAll("(?i)\\{" + Pattern.quote(itemName) + "\\}", itemValue);
+            }
         }
 
         // if we still have {} replace them with *
@@ -287,6 +295,25 @@ public class DataViewController extends ViewController {
     @Override
     public String getQuery() {
         return query;
+    }
+
+    /**
+     * Overwrites ViewController method to cach Query Exceptions
+     * 
+     * @return view result
+     * @throws QueryException
+     */
+    public List<ItemCollection> loadData() throws QueryException {
+        List<ItemCollection> result = null;
+        try {
+            result = super.loadData();
+        } catch (QueryException e) {
+            // just print a warning - result is empty!
+            logger.warning("Invalid Query: " + e.getMessage());
+            result = new ArrayList<>();
+        }
+        return result;
+
     }
 
     /**
@@ -338,6 +365,7 @@ public class DataViewController extends ViewController {
 
         // Build target filename
         SimpleDateFormat dateformat = new SimpleDateFormat("yyyyMMddHHmm");
+        boolean debug = dataViewDefinition.getItemValueBoolean("debug");
         String targetFileName = dataViewDefinition.getItemValueString("poi.targetFilename");
         if (targetFileName.isEmpty()) {
             throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
@@ -346,15 +374,21 @@ public class DataViewController extends ViewController {
         targetFileName = targetFileName + "_" + dateformat.format(new Date()) + ".xlsx";
 
         // start export
-        logger.info("start export : " + targetFileName + "...");
-        logger.fine(query);
-
+        if (debug) {
+            logger.info("├── Start POI Export : " + targetFileName + "...");
+            logger.info("│   ├── Target File: " + targetFileName);
+            logger.info("│   ├── Query: " + query);
+        }
         // load template
         FileData templateFileData = dataViewService.loadTemplate(dataViewDefinition);
 
         try {
             // test if query exceeds max count
             int totalCount = documentService.count(query);
+            // start export
+            if (debug) {
+                logger.info("│   ├── Count: " + totalCount);
+            }
             if (totalCount > DataViewService.MAX_ROWS) {
                 throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
                         "Data can not be exported into Excel because dataset exceeds " + DataViewService.MAX_ROWS
@@ -384,7 +418,9 @@ public class DataViewController extends ViewController {
             // Build target Filename
 
             templateFileData.setName(targetFileName);
-
+            if (debug) {
+                logger.info("├── POI Export completed!");
+            }
             // See:
             // https://stackoverflow.com/questions/9391838/how-to-provide-a-file-download-from-a-jsf-backing-bean
             DataViewPOIHelper.downloadExcelFile(templateFileData);

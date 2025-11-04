@@ -254,22 +254,25 @@ public class DataViewService implements Serializable {
             for (ItemCollection itemDef : viewItemDefinitions) {
                 String type = itemDef.getItemValueString("item.type");
                 String name = itemDef.getItemValueString("item.name");
-                switch (type) {
-                    case "xs:double":
-                        row.getCell(cellNum).setCellValue(workitem.getItemValueDouble(name));
-                        break;
-                    case "xs:float":
-                        row.getCell(cellNum).setCellValue(workitem.getItemValueFloat(name));
-                        break;
-                    case "xs:int":
-                        row.getCell(cellNum).setCellValue(workitem.getItemValueInteger(name));
-                        break;
-                    case "xs:date":
-                        row.getCell(cellNum).setCellValue(workitem.getItemValueDate(name));
-                        break;
-
-                    default:
-                        row.getCell(cellNum).setCellValue(workitem.getItemValueString(name));
+                try {
+                    switch (type) {
+                        case "xs:double":
+                            row.getCell(cellNum).setCellValue(workitem.getItemValueDouble(name));
+                            break;
+                        case "xs:float":
+                            row.getCell(cellNum).setCellValue(workitem.getItemValueFloat(name));
+                            break;
+                        case "xs:int":
+                            row.getCell(cellNum).setCellValue(workitem.getItemValueInteger(name));
+                            break;
+                        case "xs:date":
+                            row.getCell(cellNum).setCellValue(workitem.getItemValueDate(name));
+                            break;
+                        default:
+                            row.getCell(cellNum).setCellValue(workitem.getItemValueString(name));
+                    }
+                } catch (Exception epoi) {
+                    logger.warning("POI Error cell " + cellNum + " item: " + name);
                 }
                 cellNum++;
             }
