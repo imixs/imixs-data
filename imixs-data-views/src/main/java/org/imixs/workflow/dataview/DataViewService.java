@@ -19,10 +19,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 import org.apache.poi.ss.usermodel.CellCopyPolicy;
 import org.apache.poi.ss.util.CellReference;
@@ -173,6 +175,77 @@ public class DataViewService implements Serializable {
         throw new PluginException(DataViewController.class.getSimpleName(), ERROR_CONFIG,
                 "Missing Excel Export Template - check DataView definition!");
 
+    }
+
+    /**
+     * Applies item values to the given query string defined in a dataViewDefinition
+     * 
+     * @param query
+     * @param filter
+     * @return
+     */
+    public String parseQuery(ItemCollection dataViewDefinition, ItemCollection filter) {
+
+        String query = dataViewDefinition.getItemValueString("query");
+        boolean debug = dataViewDefinition.getItemValueBoolean("debug");
+        if (debug) {
+            logger.info("🪲 parse query=" + query);
+        }
+        try {
+            query = workflowService.adaptText(query, filter);
+        } catch (PluginException e) {
+            logger.warning("Failed to parse Query: " + e.getMessage());
+        }
+
+        // support deprecated format
+        query = parseQueryDeprecated(query, filter);
+        return query;
+    }
+
+    /**
+     * Deprecated - use <itemvalue> instead!
+     * 
+     * @param query
+     * @param filter
+     * @return
+     */
+    private String parseQueryDeprecated(String query, ItemCollection filter) {
+        List<String> filterItems = filter.getItemNames();
+        for (String itemName : filterItems) {
+            String itemValue = filter.getItemValueString(itemName);
+
+            // is date?
+            if (filter.getItemValueDate(itemName) != null) {
+                SimpleDateFormat dateformat = new SimpleDateFormat("yyyyMMddHHmm");
+                itemValue = dateformat.format(filter.getItemValueDate(itemName));
+            }
+            // Create regex pattern to match {itemName} (case-sensitive)
+            // The Pattern.quote is used to escape any special regex characters in the
+            // itemName.
+            // Only in case we have a value, we replace all occurrences in the query
+            // case-insensitive.
+            itemValue = itemValue.trim();
+            if (!itemValue.isEmpty()) {
+                // query = query.replaceAll("(?i)\\{" + Pattern.quote(itemName) + "\\}",
+                // itemValue);
+                // Prüfen ob das Pattern im Query-String vorkommt
+                String patternToFind = "\\{" + Pattern.quote(itemName) + "\\}";
+                java.util.regex.Pattern checkPattern = java.util.regex.Pattern.compile("(?i)" + patternToFind);
+                java.util.regex.Matcher matcher = checkPattern.matcher(query);
+                if (matcher.find()) {
+                    logger.warning("Deprecated query pattern {itemName} - use <itemvalue> tag instead!");
+                    query = query.replaceAll("(?i)" + patternToFind, itemValue);
+                }
+            }
+        }
+
+        // if we still have {} replace them with *
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\{[^}]*\\}");
+        java.util.regex.Matcher matcher = pattern.matcher(query);
+        query = matcher.replaceAll("*");
+        // remove **
+        query = query.replace("**", "*");
+        return query;
     }
 
     /**

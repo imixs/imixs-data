@@ -32,7 +32,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.regex.Pattern;
 
 import org.imixs.workflow.FileData;
 import org.imixs.workflow.ItemCollection;
@@ -237,54 +236,13 @@ public class DataViewController extends ViewController {
      * @throws QueryException
      */
     public void run() throws PluginException, QueryException {
-
         reset();
-
-        // build new query from template
-        query = dataViewDefinition.getItemValueString("query");
-        query = parseQuery(query, filter);
-        // query = parseQuery(query, workflowController.getWorkitem());
-
-        if (dataViewDefinition.getItemValueBoolean("debug")) {
-            logger.info("🪲 query=" + query);
-        }
+        query = dataViewService.parseQuery(dataViewDefinition, filter);
         filter.setItemValue("query", query);
-
         // Prefetch data to update total count and page count
         viewHandler.getData(this);
         // cache filter
         dataViewCache.put(dataViewDefinition.getUniqueID(), filter);
-
-    }
-
-    private String parseQuery(String query, ItemCollection filter) {
-        List<String> filterItems = filter.getItemNames();
-        for (String itemName : filterItems) {
-            String itemValue = filter.getItemValueString(itemName);
-
-            // is date?
-            if (filter.getItemValueDate(itemName) != null) {
-                SimpleDateFormat dateformat = new SimpleDateFormat("yyyyMMddHHmm");
-                itemValue = dateformat.format(filter.getItemValueDate(itemName));
-            }
-            // Create regex pattern to match {itemName} (case-sensitive)
-            // The Pattern.quote is used to escape any special regex characters in the
-            // itemName.
-            // Only in case we have a value, we replace all occurrences in the query
-            // case-insensitive.
-            itemValue = itemValue.trim();
-            if (!itemValue.isEmpty()) {
-                query = query.replaceAll("(?i)\\{" + Pattern.quote(itemName) + "\\}", itemValue);
-            }
-        }
-
-        // if we still have {} replace them with *
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\{[^}]*\\}");
-        java.util.regex.Matcher matcher = pattern.matcher(query);
-        query = matcher.replaceAll("*");
-        // remove **
-        query = query.replace("**", "*");
-        return query;
     }
 
     /**
