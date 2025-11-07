@@ -24,9 +24,7 @@
 package org.imixs.workflow.dataview;
 
 import java.io.IOException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -322,24 +320,8 @@ public class DataViewController extends ViewController {
         run();
 
         // Build target filename
-        SimpleDateFormat dateformat = new SimpleDateFormat("yyyyMMddHHmm");
         boolean debug = dataViewDefinition.getItemValueBoolean("debug");
-        String targetFileName = dataViewDefinition.getItemValueString("poi.targetFilename");
-        if (targetFileName.isEmpty()) {
-            throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
-                    "Missing Excel Export definition - check configuration!");
-        }
-        targetFileName = targetFileName + "_" + dateformat.format(new Date()) + ".xlsx";
-
-        // start export
-        if (debug) {
-            logger.info("├── Start POI Export : " + targetFileName + "...");
-            logger.info("│   ├── Target File: " + targetFileName);
-            logger.info("│   ├── Query: " + query);
-        }
-        // load template
-        FileData templateFileData = dataViewService.loadTemplate(dataViewDefinition);
-
+        FileData fileDataExport = null;
         try {
             // test if query exceeds max count
             int totalCount = documentService.count(query);
@@ -358,9 +340,8 @@ public class DataViewController extends ViewController {
             }
             List<ItemCollection> workitems = documentService.find(query, DataViewService.MAX_ROWS, 0, sortBy,
                     dataViewDefinition.getItemValueBoolean("sort.reverse"));
-            if (workitems.size() > 0) {
-                dataViewService.poiExport(workitems, dataViewDefinition, viewItemDefinitions, templateFileData);
-            }
+
+            fileDataExport = dataViewService.poiExport(workitems, dataViewDefinition, viewItemDefinitions);
 
             // create a temp event
             ItemCollection event = new ItemCollection().setItemValue("txtActivityResult",
@@ -371,17 +352,16 @@ public class DataViewController extends ViewController {
             // merge workitem fields (Workaround because custom forms did hard coded map to
             // workflowController instead of workitem
             filter.copy(workflowController.getWorkitem());
-            DataViewPOIHelper.poiUpdate(filter, templateFileData, poiConfig, workflowService);
+            DataViewPOIHelper.poiUpdate(filter, fileDataExport, poiConfig, workflowService);
 
             // Build target Filename
 
-            templateFileData.setName(targetFileName);
             if (debug) {
                 logger.info("├── POI Export completed!");
             }
             // See:
             // https://stackoverflow.com/questions/9391838/how-to-provide-a-file-download-from-a-jsf-backing-bean
-            DataViewPOIHelper.downloadExcelFile(templateFileData);
+            DataViewPOIHelper.downloadExcelFile(fileDataExport);
         } catch (IOException | QueryException e) {
             throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
                     "Failed to generate Excel Export: " + e.getMessage());

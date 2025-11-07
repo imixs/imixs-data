@@ -24,8 +24,6 @@
 package org.imixs.workflow.datagroup;
 
 import java.io.IOException;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -52,9 +50,13 @@ import jakarta.inject.Named;
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * The DataGroupController provides a ViewController to display a list of
- * references to the current workflow group. The controller extends the
- * ViewController and supports pagination.
+ * The DataGroupController provides methods to display a data group. The
+ * controller extends the ViewController class to display a list of
+ * references to the current workflow group. The controller supports pagination.
+ * <p>
+ * The controller can optional load a DataView definition to compute the query
+ * and the column sets. If no DataView definition is set, the controller
+ * provides a default query.
  * 
  * @author rsoika
  * @version 1.0
@@ -84,8 +86,9 @@ public class DataGroupController extends ViewController {
     DataViewService dataViewService;
 
     private String dataGroupQuery;
+
     // optional dataView settings
-    private ItemCollection dataView;
+    private ItemCollection dataViewDefinition;
     private String options;
     private String dataViewName;
     private List<ItemCollection> viewItemDefinitions = null;
@@ -185,24 +188,28 @@ public class DataGroupController extends ViewController {
         return dataViewName;
     }
 
+    /**
+     * Computes the query. The Quer is either defined by a DataView definition or
+     * computed dynamically.
+     */
     private void computeQuery() {
 
         dataGroupQuery = "";
         boolean debug = false;
 
         // Lazy load dataView if dataViewName is set but dataView not loaded yet
-        if (dataViewName != null && dataView == null) {
+        if (dataViewName != null && dataViewDefinition == null) {
             loadDataView(dataViewName);
         }
 
         // do we have a dataView defined?
-        if (dataView != null) {
-            debug = dataView.getItemValueBoolean("debug");
+        if (dataViewDefinition != null) {
+            debug = dataViewDefinition.getItemValueBoolean("debug");
             if (debug) {
                 logger.info("resolve query by dataView '" + dataViewName + "'");
             }
             // resove query by dataView
-            dataGroupQuery = dataViewService.parseQuery(dataView, workflowController.getWorkitem());
+            dataGroupQuery = dataViewService.parseQuery(dataViewDefinition, workflowController.getWorkitem());
 
         } else {
             // select all references by ref.....
@@ -217,7 +224,13 @@ public class DataGroupController extends ViewController {
     }
 
     /**
-     * Set options and parse dataViewName from options
+     * Set options and parse dataViewName from options.
+     * The expected format of the options string is:
+     * <p>
+     * "dataview=DATAVIEWNAME"
+     * 
+     * <p>
+     * The method loads the corresponding dataView definition immediately.
      * 
      * @param options
      */
@@ -242,16 +255,17 @@ public class DataGroupController extends ViewController {
     }
 
     /**
-     * Loads a DataView by name
+     * Loads a DataView by name and preloads the viewItem definitions of the
+     * DataView
      * 
      * @param dataViewName
      * @return
      */
     public ItemCollection loadDataView(String dataViewName) {
-        dataView = dataViewService.loadDataViewDefinition(dataViewName);
-
-        viewItemDefinitions = dataViewService.computeDataViewItemDefinitions(dataView);
-        return dataView;
+        dataViewDefinition = dataViewService.loadDataViewDefinition(dataViewName);
+        // preload the viewItem definitions
+        viewItemDefinitions = dataViewService.computeDataViewItemDefinitions(dataViewDefinition);
+        return dataViewDefinition;
     }
 
     public List<ItemCollection> getViewItemDefinitions() {
@@ -270,23 +284,12 @@ public class DataGroupController extends ViewController {
     public String export() throws PluginException, QueryException {
 
         // Build target filename
-        SimpleDateFormat dateformat = new SimpleDateFormat("yyyyMMddHHmm");
-        boolean debug = dataView.getItemValueBoolean("debug");
-        String targetFileName = dataView.getItemValueString("poi.targetFilename");
-        if (targetFileName.isEmpty()) {
-            throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
-                    "Missing Excel Export definition - check configuration!");
-        }
-        targetFileName = targetFileName + "_" + dateformat.format(new Date()) + ".xlsx";
+        boolean debug = dataViewDefinition.getItemValueBoolean("debug");
 
         // start export
         if (debug) {
-            logger.info("├── Start POI Export : " + targetFileName + "...");
-            logger.info("│   ├── Target File: " + targetFileName);
             logger.info("│   ├── Query: " + dataGroupQuery);
         }
-        // load template
-        FileData templateFileData = dataViewService.loadTemplate(dataView);
 
         try {
 
@@ -301,36 +304,32 @@ public class DataGroupController extends ViewController {
                         "Data can not be exported into Excel because dataset exceeds " + DataViewService.MAX_ROWS
                                 + " rows!");
             }
-            String sortBy = dataView.getItemValueString("sort.by");
+            String sortBy = dataViewDefinition.getItemValueString("sort.by");
             if (sortBy.isEmpty()) {
                 sortBy = "$modified"; // default
             }
             List<ItemCollection> workitems = documentService.find(dataGroupQuery, DataViewService.MAX_ROWS, 0, sortBy,
-                    dataView.getItemValueBoolean("sort.reverse"));
-            if (workitems.size() > 0) {
-                dataViewService.poiExport(workitems, dataView, viewItemDefinitions, templateFileData);
-            }
+                    dataViewDefinition.getItemValueBoolean("sort.reverse"));
+
+            FileData fileDataExport = dataViewService.poiExport(workitems, dataViewDefinition, viewItemDefinitions);
 
             // create a temp event
             ItemCollection event = new ItemCollection().setItemValue("txtActivityResult",
-                    dataView.getItemValue("poi.update"));
-            ItemCollection poiConfig = workflowService.evalWorkflowResult(event, "poi-update", dataView,
+                    dataViewDefinition.getItemValue("poi.update"));
+            ItemCollection poiConfig = workflowService.evalWorkflowResult(event, "poi-update", dataViewDefinition,
                     false);
 
             // merge workitem fields (Workaround because custom forms did hard coded map to
             // workflowController instead of workitem
 
-            DataViewPOIHelper.poiUpdate(workflowController.getWorkitem(), templateFileData, poiConfig, workflowService);
+            DataViewPOIHelper.poiUpdate(workflowController.getWorkitem(), fileDataExport, poiConfig, workflowService);
 
-            // Build target Filename
-
-            templateFileData.setName(targetFileName);
             if (debug) {
                 logger.info("├── POI Export completed!");
             }
             // See:
             // https://stackoverflow.com/questions/9391838/how-to-provide-a-file-download-from-a-jsf-backing-bean
-            DataViewPOIHelper.downloadExcelFile(templateFileData);
+            DataViewPOIHelper.downloadExcelFile(fileDataExport);
         } catch (IOException | QueryException e) {
             throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
                     "Failed to generate Excel Export: " + e.getMessage());

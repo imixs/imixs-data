@@ -26,7 +26,6 @@ import java.util.logging.Logger;
 import org.imixs.workflow.FileData;
 import org.imixs.workflow.ItemCollection;
 import org.imixs.workflow.SignalAdapter;
-import org.imixs.workflow.dataview.DataViewController;
 import org.imixs.workflow.dataview.DataViewPOIHelper;
 import org.imixs.workflow.dataview.DataViewService;
 import org.imixs.workflow.engine.DocumentService;
@@ -348,23 +347,9 @@ public class DataGroupExportAdapter implements SignalAdapter {
     private FileData exportPoi(ItemCollection workitem, ItemCollection dataViewDefinition)
             throws QueryException, PluginException {
         String uniqueid = workitem.getUniqueID();
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        PrintWriter writer = new PrintWriter(new OutputStreamWriter(byteArrayOutputStream, StandardCharsets.UTF_8));
 
         List<ItemCollection> viewItemDefinitions = dataViewService
                 .computeDataViewItemDefinitions(dataViewDefinition);
-
-        // load template
-        FileData templateFileData = dataViewService.loadTemplate(dataViewDefinition);
-
-        // Build target filename
-        SimpleDateFormat dateformat = new SimpleDateFormat("yyyyMMddHHmm");
-        String targetFileName = dataViewDefinition.getItemValueString("poi.targetFilename");
-        if (targetFileName.isEmpty()) {
-            throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
-                    "Missing Excel Export definition - check configuration!");
-        }
-        targetFileName = targetFileName + "_" + dateformat.format(new Date()) + ".xlsx";
 
         String sortBy = dataViewDefinition.getItemValueString("sort.by");
         if (sortBy.isEmpty()) {
@@ -373,9 +358,7 @@ public class DataGroupExportAdapter implements SignalAdapter {
         List<ItemCollection> workitems = dataGroupService.loadData(uniqueid, DataViewService.MAX_ROWS, 0, sortBy, false,
                 false);
 
-        if (workitems.size() > 0) {
-            dataViewService.poiExport(workitems, dataViewDefinition, viewItemDefinitions, templateFileData);
-        }
+        FileData fileDataExport = dataViewService.poiExport(workitems, dataViewDefinition, viewItemDefinitions);
 
         // create a temp event
         ItemCollection event = new ItemCollection().setItemValue("txtActivityResult",
@@ -383,10 +366,9 @@ public class DataGroupExportAdapter implements SignalAdapter {
         ItemCollection poiConfig = workflowService.evalWorkflowResult(event, "poi-update", dataViewDefinition,
                 false);
 
-        DataViewPOIHelper.poiUpdate(workitem, templateFileData, poiConfig, workflowService);
+        DataViewPOIHelper.poiUpdate(workitem, fileDataExport, poiConfig, workflowService);
 
-        templateFileData.setName(targetFileName);
-        return templateFileData;
+        return fileDataExport;
 
     }
 }

@@ -21,6 +21,7 @@ import java.io.InputStream;
 import java.io.Serializable;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -249,8 +250,9 @@ public class DataViewService implements Serializable {
     }
 
     /**
-     * The method exports a dataset into a a POI XSSFWorkbook. The Workbook is
-     * loaded from a template data in a dataViewDefinition.
+     * The method exports a dataset into a a POI XSSFWorkbook and returns a new
+     * FileData object with a POI Workfbook. The Workbook is loaded from a template
+     * data in a dataViewDefinition.
      * <p>
      * The export method sends a DataViewExportEvent. An observer CID bean can
      * implement alternative exporters.
@@ -258,13 +260,31 @@ public class DataViewService implements Serializable {
      * process is completed. Otherwise the default behavior will be adapted.
      * 
      * 
+     * 
      * @throws PluginException
      */
-    public void poiExport(List<ItemCollection> dataset, ItemCollection dataViewDefinition,
-            List<ItemCollection> viewItemDefinitions,
-            FileData fileData) throws PluginException {
+    public FileData poiExport(List<ItemCollection> dataset, ItemCollection dataViewDefinition,
+            List<ItemCollection> viewItemDefinitions) throws PluginException {
+
+        boolean debug = dataViewDefinition.getItemValueBoolean("debug");
+
         // load XSSFWorkbook
-        try (InputStream inputStream = new ByteArrayInputStream(fileData.getContent())) {
+        FileData templateFileData = loadTemplate(dataViewDefinition);
+        // build target name
+        SimpleDateFormat dateformat = new SimpleDateFormat("yyyyMMddHHmm");
+        String targetFileName = dataViewDefinition.getItemValueString("poi.targetFilename");
+        if (targetFileName.isEmpty()) {
+            throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
+                    "Missing Excel Export definition - check configuration!");
+        }
+        targetFileName = targetFileName + "_" + dateformat.format(new Date()) + ".xlsx";
+
+        // start export
+        if (debug) {
+            logger.info("├── Start POI Export : " + targetFileName + "...");
+            logger.info("│   ├── Target File: " + targetFileName);
+        }
+        try (InputStream inputStream = new ByteArrayInputStream(templateFileData.getContent())) {
             XSSFWorkbook doc = new XSSFWorkbook(inputStream);
             // send DataViewExportEvent....
             if (dataViewExportEvents != null) {
@@ -278,11 +298,14 @@ public class DataViewService implements Serializable {
             }
 
             ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-            // write back the file
+            // write data
             doc.write(byteArrayOutputStream);
             doc.close();
+
+            // return a new DataFile object
             byte[] newContent = byteArrayOutputStream.toByteArray();
-            fileData.setContent(newContent);
+            FileData fileData = new FileData(targetFileName, newContent, templateFileData.getContentType(), null);
+            return fileData;
 
         } catch (IOException e) {
             throw new PluginException(DataViewPOIHelper.class.getSimpleName(), ERROR_CONFIG,

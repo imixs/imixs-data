@@ -56,3 +56,10 @@ Example:
    <debug>true</debug>
 </imixs-data-group>
 ```
+
+## DataViewController
+
+The CDI bean `DataGroupController` provides methods to display a data group. The
+controller extends the `ViewController` class to display a list of references to the current workflow group. The controller supports pagination.
+
+The controller can optional load a DataView definition to compute the query and the column sets. If no DataView definition is set, the controller provides a default query.
