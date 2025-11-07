@@ -277,6 +277,7 @@ public class DataViewService implements Serializable {
             throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
                     "Missing Excel Export definition - check configuration!");
         }
+        targetFileName = workflowService.adaptText(targetFileName, dataViewDefinition);
         targetFileName = targetFileName + "_" + dateformat.format(new Date()) + ".xlsx";
 
         // start export
