@@ -1,7 +1,16 @@
 # Imixs-Data View
 
-An Imixs Data View presents workitems in a list. The data view describes the selector as well as the columns and their contents.
+An Imixs Data View presents workitems in a list. The data view definition describes the selector as well as the columns and their contents.
+
+<img src="../doc/images/data-view-01.png" width=800 />
+
 The selector can either be a lucene query or a reference to a [Imixs Data Group](../imixs-data-groups/README.md).
+
+<img src="../doc/images/data-view-02.png" width=800 />
+
+You can also define a export into a POI Format:
+
+<img src="../doc/images/data-view-03.png" width=800 />
 
 ## Export a Data View
 
