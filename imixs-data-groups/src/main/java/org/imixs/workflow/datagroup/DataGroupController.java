@@ -23,11 +23,23 @@
  *******************************************************************************/
 package org.imixs.workflow.datagroup;
 
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.imixs.workflow.FileData;
 import org.imixs.workflow.ItemCollection;
+import org.imixs.workflow.dataview.DataViewController;
+import org.imixs.workflow.dataview.DataViewExportEvent;
+import org.imixs.workflow.dataview.DataViewPOIHelper;
+import org.imixs.workflow.dataview.DataViewService;
+import org.imixs.workflow.engine.DocumentService;
 import org.imixs.workflow.engine.WorkflowService;
+import org.imixs.workflow.exceptions.PluginException;
+import org.imixs.workflow.exceptions.QueryException;
 import org.imixs.workflow.faces.data.ViewController;
 import org.imixs.workflow.faces.data.WorkflowController;
 
@@ -63,7 +75,20 @@ public class DataGroupController extends ViewController {
     WorkflowController workflowController;
 
     @Inject
+    DocumentService documentService;
+
+    @Inject
     private Conversation conversation;
+
+    @Inject
+    DataViewService dataViewService;
+
+    private String dataGroupQuery;
+    // optional dataView settings
+    private ItemCollection dataView;
+    private String options;
+    private String dataViewName;
+    private List<ItemCollection> viewItemDefinitions = null;
 
     @Override
     @PostConstruct
@@ -108,14 +133,7 @@ public class DataGroupController extends ViewController {
      */
     @Override
     public String getQuery() {
-        // select all references.....
-        String uniqueId = workflowController.getWorkitem().getUniqueID();
-        String query = "(";
-        query = " (type:\"workitem\" OR type:\"workitemarchive\") AND (" + DataGroupService.ITEM_WORKITEMREF + ":\""
-                + uniqueId + "\")";
-
-        logger.fine("Query= " + query);
-        return query;
+        return dataGroupQuery;
     }
 
     /**
@@ -162,4 +180,164 @@ public class DataGroupController extends ViewController {
         // Key not found
         return null;
     }
+
+    public String getDataViewName() {
+        return dataViewName;
+    }
+
+    private void computeQuery() {
+
+        dataGroupQuery = "";
+        boolean debug = false;
+
+        // Lazy load dataView if dataViewName is set but dataView not loaded yet
+        if (dataViewName != null && dataView == null) {
+            loadDataView(dataViewName);
+        }
+
+        // do we have a dataView defined?
+        if (dataView != null) {
+            debug = dataView.getItemValueBoolean("debug");
+            if (debug) {
+                logger.info("resolve query by dataView '" + dataViewName + "'");
+            }
+            // resove query by dataView
+            dataGroupQuery = dataViewService.parseQuery(dataView, workflowController.getWorkitem());
+
+        } else {
+            // select all references by ref.....
+            String uniqueId = workflowController.getWorkitem().getUniqueID();
+            dataGroupQuery = "(";
+            dataGroupQuery = " (type:\"workitem\" OR type:\"workitemarchive\") AND ("
+                    + DataGroupService.ITEM_WORKITEMREF
+                    + ":\""
+                    + uniqueId + "\")";
+        }
+
+    }
+
+    /**
+     * Set options and parse dataViewName from options
+     * 
+     * @param options
+     */
+    public void setOptions(String options) {
+        this.options = options;
+
+        // Extract and set dataViewName from options
+        if (options != null) {
+            String dataViewName = getOptionValue(options, "dataview");
+            if (dataViewName != null) {
+                this.dataViewName = dataViewName;
+                // Note: We don't load the dataView here - lazy loading in getQuery()
+
+                computeQuery();
+
+            }
+        }
+    }
+
+    public String getOptions() {
+        return options;
+    }
+
+    /**
+     * Loads a DataView by name
+     * 
+     * @param dataViewName
+     * @return
+     */
+    public ItemCollection loadDataView(String dataViewName) {
+        dataView = dataViewService.loadDataViewDefinition(dataViewName);
+
+        viewItemDefinitions = dataViewService.computeDataViewItemDefinitions(dataView);
+        return dataView;
+    }
+
+    public List<ItemCollection> getViewItemDefinitions() {
+        return viewItemDefinitions;
+    }
+
+    /**
+     * Exports data into a excel template processed by apache-poi. The method sends
+     * a DataViewExport event to allow clients to adapt the export process.
+     * 
+     * @see DataViewExportEvent
+     *
+     * @throws PluginException
+     * @throws QueryException
+     */
+    public String export() throws PluginException, QueryException {
+
+        // Build target filename
+        SimpleDateFormat dateformat = new SimpleDateFormat("yyyyMMddHHmm");
+        boolean debug = dataView.getItemValueBoolean("debug");
+        String targetFileName = dataView.getItemValueString("poi.targetFilename");
+        if (targetFileName.isEmpty()) {
+            throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
+                    "Missing Excel Export definition - check configuration!");
+        }
+        targetFileName = targetFileName + "_" + dateformat.format(new Date()) + ".xlsx";
+
+        // start export
+        if (debug) {
+            logger.info("├── Start POI Export : " + targetFileName + "...");
+            logger.info("│   ├── Target File: " + targetFileName);
+            logger.info("│   ├── Query: " + dataGroupQuery);
+        }
+        // load template
+        FileData templateFileData = dataViewService.loadTemplate(dataView);
+
+        try {
+
+            // test if query exceeds max count
+            int totalCount = documentService.count(dataGroupQuery);
+            // start export
+            if (debug) {
+                logger.info("│   ├── Count: " + totalCount);
+            }
+            if (totalCount > DataViewService.MAX_ROWS) {
+                throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
+                        "Data can not be exported into Excel because dataset exceeds " + DataViewService.MAX_ROWS
+                                + " rows!");
+            }
+            String sortBy = dataView.getItemValueString("sort.by");
+            if (sortBy.isEmpty()) {
+                sortBy = "$modified"; // default
+            }
+            List<ItemCollection> workitems = documentService.find(dataGroupQuery, DataViewService.MAX_ROWS, 0, sortBy,
+                    dataView.getItemValueBoolean("sort.reverse"));
+            if (workitems.size() > 0) {
+                dataViewService.poiExport(workitems, dataView, viewItemDefinitions, templateFileData);
+            }
+
+            // create a temp event
+            ItemCollection event = new ItemCollection().setItemValue("txtActivityResult",
+                    dataView.getItemValue("poi.update"));
+            ItemCollection poiConfig = workflowService.evalWorkflowResult(event, "poi-update", dataView,
+                    false);
+
+            // merge workitem fields (Workaround because custom forms did hard coded map to
+            // workflowController instead of workitem
+
+            DataViewPOIHelper.poiUpdate(workflowController.getWorkitem(), templateFileData, poiConfig, workflowService);
+
+            // Build target Filename
+
+            templateFileData.setName(targetFileName);
+            if (debug) {
+                logger.info("├── POI Export completed!");
+            }
+            // See:
+            // https://stackoverflow.com/questions/9391838/how-to-provide-a-file-download-from-a-jsf-backing-bean
+            DataViewPOIHelper.downloadExcelFile(templateFileData);
+        } catch (IOException | QueryException e) {
+            throw new PluginException(DataViewController.class.getSimpleName(), DataViewService.ERROR_CONFIG,
+                    "Failed to generate Excel Export: " + e.getMessage());
+        }
+
+        // return "/pages/admin/excel_export_rechnungsausgang.jsf?faces-redirect=true";
+        return "";
+    }
+
 }
