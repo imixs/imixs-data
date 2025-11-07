@@ -39,3 +39,20 @@ To remove a workitem from a data group you can use the following definition:
 ```
 
 This definition will remove the current workitem from a data group of the workflow model 'sepa-export-manual-1.0'. If a corresponding group exists, the data group will be processed by the event 20 which is an optional functionality. The DataGroupService is using the given query to test if a corresponding data group already exists.
+
+## Export a Data Group
+
+With the signal adapter class `org.imixs.workflow.datagroup.DataGroupExportAdapter' you can export the data of a data group either
+into a csv file or an excel file based on a dataview definition.
+The export file is stored into the current workitem. Find details about Dataviews [here](https://github.com/imixs/imixs-data/tree/main/imixs-data-views)
+
+Example:
+
+```xml
+<imixs-data-group name="EXPORT">
+    <type>CSV|POI</type>
+    <dataview>invoices</dataview>
+    <targetname>my-export.csv</targetname>
+   <debug>true</debug>
+</imixs-data-group>
+```
