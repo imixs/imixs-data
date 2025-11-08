@@ -339,4 +339,15 @@ public class DataGroupController extends ViewController {
         return "";
     }
 
+    /**
+     * Returns true if a poi export is defined
+     * 
+     * @return
+     */
+    public boolean hasPoiExport() {
+        if (dataViewDefinition != null && !dataViewDefinition.getItemValueString("poi.targetfilename").isBlank()) {
+            return true;
+        }
+        return false;
+    }
 }
