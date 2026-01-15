@@ -542,6 +542,12 @@ public class TikaService {
             }
         }
 
+        // application/octet-stream and *.msg => application/vnd.ms-outlook
+        if ("application/octet-stream".equals(contentType)
+                && fileData.getName().toLowerCase().endsWith(".msg")) {
+            contentType = "application/vnd.ms-outlook";
+        }
+
         return contentType;
     }
 
