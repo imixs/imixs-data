@@ -81,6 +81,10 @@ public class DataViewService implements Serializable {
     @Inject
     protected Event<DataViewExportEvent> dataViewExportEvents;
 
+    public WorkflowService getWorkflowService() {
+        return workflowService;
+    }
+
     /**
      * This method loads a DataView Definition for a given dataview
      * 
