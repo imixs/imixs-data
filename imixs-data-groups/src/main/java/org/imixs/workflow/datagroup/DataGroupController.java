@@ -136,6 +136,10 @@ public class DataGroupController extends ViewController {
      */
     @Override
     public String getQuery() {
+        if (dataGroupQuery == null) {
+            // lazy loading
+            computeQuery();
+        }
         return dataGroupQuery;
     }
 
