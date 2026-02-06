@@ -18,12 +18,15 @@ To build a data group just add the DataGroupAdapter to the corresponding event a
     <init.task>1000</init.task>
     <init.event>10</init.event>
     <!-- Optional -->
+    <init.items>datev.booking_period</init.items>
     <update.event>20</update.event>
 
 </imixs-data-group>
 ```
 
 This will add the current workitem to a new data group of the workflow model 'sepa-export-manual-1.0' with the initial task 1000 and the initial event '10'. If a corresponding group already exists, the data group will be processed by the event 20 which is an optional functionality. The DataGroupService is using the given query to test if a corresponding data group already exists.
+
+The tag 'init.items' is used to copy a set of items from the reference workitem into the new data group. For example you may want to copy a `booking_period` from an invoice into the data group.
 
 ## Remove a Workitem from a Data Group
 
@@ -40,9 +43,22 @@ To remove a workitem from a data group you can use the following definition:
 
 This definition will remove the current workitem from a data group of the workflow model 'sepa-export-manual-1.0'. If a corresponding group exists, the data group will be processed by the event 20 which is an optional functionality. The DataGroupService is using the given query to test if a corresponding data group already exists.
 
+## Execute a Data Group
+
+With the data group mode `EXECUTE` it is possible to process all referred workitems
+
+```xml
+<imixs-data-group name="EXECUTE">
+    <query>(type:workitem) AND ($modelversion:invoice*) AND ($taskid:1000)</query>
+    <event>20</event>
+</imixs-data-group>
+```
+
+The tag `event` is mandatory. The adapter will process all referred workitems with this event in the same transaction. If at least one referred workitem can't be process (e.g. for a ProcessingException) the transaction will be canceled and non of the referred worktitems will be updated.
+
 ## Export a Data Group
 
-With the signal adapter class `org.imixs.workflow.datagroup.DataGroupExportAdapter' you can export the data of a data group either
+With the signal adapter class `org.imixs.workflow.datagroup.DataGroupExportAdapter` you can export the data of a data group either
 into a csv file or an excel file based on a dataview definition.
 The export file is stored into the current workitem. Find details about Dataviews [here](https://github.com/imixs/imixs-data/tree/main/imixs-data-views)
 

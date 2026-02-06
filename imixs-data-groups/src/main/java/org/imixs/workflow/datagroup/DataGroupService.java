@@ -83,6 +83,23 @@ public class DataGroupService implements Serializable {
     }
 
     /**
+     * Helper method to load a collection of all workitems referring to a data group
+     * defined by a query. The query will be extended with the condition
+     * 
+     * '$workitemref:<UNIQUEID>
+     * 
+     * @param query    - query
+     * @param workitem - workitem defining the reference
+     * @return
+     * @throws QueryException
+     */
+    public List<ItemCollection> findDataGroupReferences(String query, ItemCollection workitem) throws QueryException {
+        query = query + " ($workitemref:" + workitem.getUniqueID() + ")";
+        List<ItemCollection> resultList = workflowService.getDocumentService().find(query, 1000, 0, "$modified", true);
+        return resultList;
+    }
+
+    /**
      * Helper method to create a new Data Group
      * 
      * @param modelversion

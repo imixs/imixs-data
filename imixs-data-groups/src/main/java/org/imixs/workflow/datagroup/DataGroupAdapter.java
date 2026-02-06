@@ -31,22 +31,38 @@ import org.imixs.workflow.exceptions.QueryException;
 import jakarta.inject.Inject;
 
 /**
- * The DataGroupAdapter is used add or remove a workitem to a data groups
+ * The DataGroupAdapter is used add or remove a workitem to a data groups. In
+ * addition it is also possible to execute all relationships ob a datagroup.
  * 
- * Example:
+ * Example to add a workitem to a data group:
  * 
  * <pre>
  * {@code
 <imixs-data-group name="ADD">
-    <query>(type:workitem) AND ($modelversion:sepa-export-manual*)</endpoint>
+    <query>(type:workitem) AND ($modelversion:sepa-export-manual*)</query>
     <init.model>sepa-export-manual-1.0</init.model>
     <init.task>1000</init.task>
     <init.event>10</init.event>
     <!-- Optional -->
+    <init.items>datev.booking_period</init.items>
     <update.event>20</update.event>
 </imixs-data-group>
  * }
  * </pre>
+ * 
+ * Example to execute all referred workitem in a data group:
+ * 
+ * <pre>
+ * {@code
+<imixs-data-group name="EXECUTE">
+    <query>(type:workitem) AND ($modelversion:invoice*) AND ($taskid:1000)</query>
+    <event>20</event>
+</imixs-data-group>
+ * }
+ * </pre>
+ * 
+ * Note: The execution query will be extended by ' AND
+ * ($workitemref:<UNIQUEID>)'
  * 
  * @author Ralph Soika
  * @version 1.0
@@ -57,6 +73,7 @@ public class DataGroupAdapter implements SignalAdapter {
 
     public static final String MODE_ADD = "add";
     public static final String MODE_REMOVE = "remove";
+    public static final String MODE_EXECUTE = "execute";
 
     private static Logger logger = Logger.getLogger(DataGroupAdapter.class.getName());
 
@@ -110,8 +127,11 @@ public class DataGroupAdapter implements SignalAdapter {
                 MODE_ADD, workitem, true);
         List<ItemCollection> removeDefinitions = workflowService.evalWorkflowResultXML(event, "imixs-data-group",
                 MODE_REMOVE, workitem, true);
+        List<ItemCollection> executeDefinitions = workflowService.evalWorkflowResultXML(event, "imixs-data-group",
+                MODE_EXECUTE, workitem, true);
+
         /**
-         * Iterate over each PROMPT definition and process the prompt
+         * Iterate over each definition and process the data group
          */
         if (addDefinitions != null) {
             for (ItemCollection groupDefinition : addDefinitions) {
@@ -124,6 +144,13 @@ public class DataGroupAdapter implements SignalAdapter {
         if (removeDefinitions != null) {
             for (ItemCollection groupDefinition : removeDefinitions) {
                 removeWorkitemFromDataGroup(workitem, groupDefinition);
+            }
+        }
+
+        // verify EXECUTE mode
+        if (executeDefinitions != null) {
+            for (ItemCollection groupDefinition : executeDefinitions) {
+                executeWorkitemFromDataGroup(workitem, groupDefinition);
             }
         }
 
@@ -142,7 +169,7 @@ public class DataGroupAdapter implements SignalAdapter {
      * @throws PluginException
      */
     @SuppressWarnings("unchecked")
-    private void addWorkitemToDataGroup(ItemCollection workitem, ItemCollection groupDefinition)
+    protected void addWorkitemToDataGroup(ItemCollection workitem, ItemCollection groupDefinition)
             throws AccessDeniedException, PluginException {
         boolean debug = groupDefinition.getItemValueBoolean("debug");
         String query = groupDefinition.getItemValueString("query");
@@ -171,7 +198,7 @@ public class DataGroupAdapter implements SignalAdapter {
                 }
             }
 
-            // add current workitem to data gruop
+            // add current workitem to data group
             List<String> refList = workitem.getItemValue(DataGroupService.ITEM_WORKITEMREF);
             if (!refList.contains(dataGroup.getUniqueID())) {
                 workitem.appendItemValueUnique(DataGroupService.ITEM_WORKITEMREF, dataGroup.getUniqueID());
@@ -203,7 +230,7 @@ public class DataGroupAdapter implements SignalAdapter {
      * @throws ModelException
      */
     @SuppressWarnings("unchecked")
-    private void removeWorkitemFromDataGroup(ItemCollection workitem, ItemCollection groupDefinition)
+    protected void removeWorkitemFromDataGroup(ItemCollection workitem, ItemCollection groupDefinition)
             throws AccessDeniedException, PluginException {
         boolean debug = groupDefinition.getItemValueBoolean("debug");
         String query = groupDefinition.getItemValueString("query");
@@ -243,4 +270,48 @@ public class DataGroupAdapter implements SignalAdapter {
                     "⚠️ Failed to update dataGroup: " + e.getMessage(), e);
         }
     }
+
+    /**
+     * This helper method executes all workitems referring to this data group
+     * 
+     * @param workitem
+     * @param groupDefinition
+     * @throws AccessDeniedException
+     * @throws PluginException
+     * @throws ModelException
+     */
+    protected void executeWorkitemFromDataGroup(ItemCollection workitem, ItemCollection groupDefinition)
+            throws AccessDeniedException, PluginException {
+        boolean debug = groupDefinition.getItemValueBoolean("debug");
+        String query = groupDefinition.getItemValueString("query");
+        query = workflowService.adaptText(query, workitem);
+        int eventId = groupDefinition.getItemValueInteger("event");
+
+        ItemCollection dataGroup;
+        logger.info("├── execute data group '" + workitem.getUniqueID() + "' ...");
+        // find group
+        try {
+
+            List<ItemCollection> refList = dataGroupService.findDataGroupReferences(query, workitem);
+            if (refList.size() > 0) {
+                if (debug) {
+                    logger.info("│   ├── executing " + refList.size() + " ...");
+                }
+                for (ItemCollection refWorkitem : refList) {
+                    workflowService.processWorkItem(refWorkitem.event(eventId));
+                }
+
+            } else {
+                logger.info(
+                        "│   ├── ⚠️ no matching references found for data group '" + workitem.getUniqueID() + "'");
+            }
+
+        } catch (QueryException | ProcessingErrorException | ModelException e) {
+            logger.warning("├── ⚠️ Failed to execute dataGroup references: " + e.getMessage());
+            throw new PluginException(DataGroupAdapter.class.getName(),
+                    DataGroupService.API_ERROR,
+                    "⚠️ Failed to execute dataGroup references: " + e.getMessage(), e);
+        }
+    }
+
 }
