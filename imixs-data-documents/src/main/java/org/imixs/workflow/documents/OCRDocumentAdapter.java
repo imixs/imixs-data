@@ -71,17 +71,19 @@ public class OCRDocumentAdapter implements SignalAdapter {
             try {
                 List<String> tikaOptions = null;
                 String filePattern = null;
+                String embeddingsPattern = null;
                 int maxPdfPages = 0;
                 // read opitonal tika options
                 ItemCollection evalItemCollection = workflowService.evalWorkflowResult(event, "tika", document, false);
                 if (evalItemCollection != null) {
                     tikaOptions = evalItemCollection.getItemValue("options");
                     filePattern = evalItemCollection.getItemValueString("filepattern");
+                    embeddingsPattern = evalItemCollection.getItemValueString("embeddingsPattern");
                     maxPdfPages = evalItemCollection.getItemValueInteger("maxpdfpages"); // only for pdf documents
                 }
                 // extract text data....
                 ocrService.extractText(document, snapshotService.findSnapshot(document), null, tikaOptions,
-                        filePattern, maxPdfPages);
+                        filePattern, maxPdfPages, embeddingsPattern);
             } catch (PluginException e) {
                 String message = "Tika OCRService - unable to extract text: " + e.getMessage();
                 throw new AdapterException(e.getErrorContext(), e.getErrorCode(), message, e);

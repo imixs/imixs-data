@@ -3,6 +3,7 @@ package org.imixs.workflow.documents;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -27,6 +28,10 @@ import org.imixs.workflow.exceptions.PluginException;
 
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonReader;
 
 /**
  * The OCRService extracts the textual information from document attachments of
@@ -96,55 +101,51 @@ public class TikaService {
     int ocrMaxFileSize;
 
     /**
-     * Extracts the textual information from document attachments.
-     * <p>
-     * The method extracts the textual content for each new document of a given
-     * workitem. For PDF files with textual content the method calls the method
-     * 'extractTextFromPDF' using the PDFBox api. In other cases, the method sends
-     * the content via a Rest API to the tika server for OCR processing.
-     * <p>
-     * The result is stored into the fileData attribute 'text'
-     * 
-     * @param workitem
-     * @throws PluginException
-     * @throws AdapterException
+     * Convenience method - delegates to the full extractText method with
+     * rmetaText=false and no embeddingsPattern for backward compatibility.
      */
     public void extractText(ItemCollection workitem, ItemCollection snapshot) throws PluginException, AdapterException {
-        extractText(workitem, snapshot, ocrStategy, null, null, 0);
+        extractText(workitem, snapshot, ocrStategy, null, null, 0, null);
+    }
+
+    /**
+     * Convenience method - delegates to the full extractText method with
+     * rmetaText=false and no embeddingsPattern for backward compatibility.
+     */
+    public void extractText(ItemCollection workitem, ItemCollection snapshot, String _ocrStategy, List<String> options,
+            String filePatternRegex, int maxPdfPages) throws PluginException, AdapterException {
+        extractText(workitem, snapshot, _ocrStategy, options, filePatternRegex, maxPdfPages, null);
     }
 
     /**
      * Extracts the textual information from document attachments.
      * <p>
-     * The method extracts the textual content for each new file attachment of a
-     * given workitem. The text information is stored in the $file attribute 'text'.
+     * ...existing javadoc...
      * <p>
-     * For PDF files with textual content the method calls the method
-     * 'extractTextFromPDF' using the PDFBox api. In other cases, the method sends
-     * the content via a Rest API to the tika server for OCR processing.
-     * <p>
-     * The method also extracts files already stored in a snapshot workitem. In this
-     * case the method tests if the $file attribute 'text' already exists.
-     * <p>
-     * An optional param 'filePattern' can be provided to extract text only from
-     * Attachments mating the given file pattern (regex).
-     * <p>
-     * The optioanl param 'maxPages' can be provided to reduce the size of PDF
-     * documents to a maximum of pages. This avoids blocking the tika service by
-     * processing to large documetns. For example only the first 5 pages can be
-     * scanned.
-     * 
-     * @param workitem         - workitem with file attachments
-     * @param pdf_mode         - TEXT_ONLY, OCR_ONLY, TEXT_AND_OCR
-     * @param options          - optional tika header params
-     * @param filePatternRegex - optional regular expression to match files
+     * If rmetaText is set to true, the method uses the Tika /rmeta/text endpoint
+     * instead of /tika. In this case embedded documents (e.g. attachments in an
+     * .eml file) are filtered by the given embeddingsPattern. Only embedded
+     * documents whose resource path matches the pattern are included in the
+     * extracted text content.
+     *
+     * @param workitem          - workitem with file attachments
+     * @param _ocrStategy       - TEXT_ONLY, OCR_ONLY, TEXT_AND_OCR
+     * @param options           - optional tika header params
+     * @param filePatternRegex  - optional regular expression to match files
+     * @param maxPdfPages       - optional maximum number of pages for PDF documents
+     * @param embeddingsPattern - optional regex to filter embedded documents by
+     *                          resource path, use /rmeta/text endpoint for
+     *                          recursive
+     *                          extraction
      * @throws PluginException
      * @throws AdapterException
      */
     public void extractText(ItemCollection workitem, ItemCollection snapshot, String _ocrStategy, List<String> options,
-            String filePatternRegex, int maxPdfPages) throws PluginException, AdapterException {
+            String filePatternRegex, int maxPdfPages, String embeddingsPattern)
+            throws PluginException, AdapterException {
         boolean debug = logger.isLoggable(Level.FINE);
         Pattern filePattern = null;
+        Pattern embPattern = null;
 
         if (options == null) {
             options = new ArrayList<String>();
@@ -161,18 +162,18 @@ public class TikaService {
                     "Invalid TIKA_OCR_MODE - expected one of the following options: NO_OCR | OCR_ONLY | OCR_AND_TEXT_EXTRACTION");
         }
 
-        // if the options did not already include the X-Tika-PDFOcrStrategy than we add
+        // if the options did not already include the X-Tika-PDFOcrStrategy then we add
         // it now...
         boolean hasPDFOcrStrategy = options.stream()
                 .anyMatch(s -> s.toLowerCase().startsWith("X-Tika-PDFOcrStrategy=".toLowerCase()));
         if (!hasPDFOcrStrategy) {
-            // we do need to set a OcrStrategy from the environment...
             options.add("X-Tika-PDFOcrStrategy=" + ocrStategy);
         }
 
         // print tika options...
         if (debug) {
             logger.info("......  filepattern = " + filePatternRegex);
+            logger.info("......  embeddingsPattern = " + embeddingsPattern);
             for (String opt : options) {
                 logger.info("......  Tika Option = " + opt);
             }
@@ -183,8 +184,12 @@ public class TikaService {
             filePattern = Pattern.compile(filePatternRegex);
         }
 
+        // do we have an embeddings pattern?
+        if (embeddingsPattern != null && !embeddingsPattern.isEmpty()) {
+            embPattern = Pattern.compile(embeddingsPattern);
+        }
+
         long l = System.currentTimeMillis();
-        // List<ItemCollection> currentDmsList = DMSHandler.getDmsList(workitem);
         List<FileData> files = workitem.getFileData();
 
         if (debug) {
@@ -195,7 +200,6 @@ public class TikaService {
             logger.fine("... processing file: " + fileData.getName());
             // do we have an optional file pattern?
             if (filePattern != null && !filePattern.matcher(fileData.getName()).find()) {
-                // the file did not match the given pattern!
                 logger.info("... filename does not match given pattern!");
                 continue;
             }
@@ -205,11 +209,9 @@ public class TikaService {
                 if (debug) {
                     logger.info("... workitem has not OCRContent - fetching origin file data...");
                 }
-                // yes - fetch the origin fileData object....
                 FileData originFileData = fetchOriginFileData(fileData, snapshot);
                 if (originFileData != null) {
                     String textContent = null;
-                    // extract the text content...
                     try {
                         // if the size of the file is greater then ENV_OCR_SERVICE_MAXFILESIZE,
                         // we ignore the file!
@@ -217,15 +219,20 @@ public class TikaService {
                                 && originFileData.getContent().length > ocrMaxFileSize) {
                             throw new AdapterException(TikaService.class.getSimpleName(), DOCUMENT_ERROR,
                                     "The file '" + fileData.getName() + "' exceed the allowed max size of "
-                                            + ocrMaxFileSize + " bytes (file size=" + originFileData.getContent().length
-                                            + ")");
+                                            + ocrMaxFileSize + " bytes (file size="
+                                            + originFileData.getContent().length + ")");
                         }
                         if (debug) {
                             logger.info("...text extraction '" + originFileData.getName() + "' content size="
                                     + originFileData.getContent().length + " ...");
                         }
 
-                        textContent = doORCProcessing(originFileData, options, maxPdfPages);
+                        // use /rmeta/text endpoint if embeddingPattern is defined, otherwise use /tika
+                        if (embPattern != null) {
+                            textContent = doOCRProcessingRMetaText(originFileData, options, embPattern);
+                        } else {
+                            textContent = doORCProcessing(originFileData, options, maxPdfPages);
+                        }
 
                         if (textContent == null) {
                             logger.warning("Unable to extract text-content for '" + fileData.getName() + "'");
@@ -242,7 +249,6 @@ public class TikaService {
                     }
                 }
             }
-
         }
         if (debug) {
             logger.fine("...extracted textual information in " + (System.currentTimeMillis() - l) + "ms");
@@ -271,6 +277,12 @@ public class TikaService {
             logger.severe(
                     "OCR_SERVICE_ENDPOINT is missing - OCR processing not supported without a valid tika server endpoint!");
             return null;
+        }
+        // build the /tika endpoint URL
+        String tikaEndpoint = serviceEndpoint.get();
+        if (!tikaEndpoint.endsWith("/tika")) {
+            tikaEndpoint = tikaEndpoint + "/tika";
+            logger.info("... /tika endpoint derived: " + serviceEndpoint.get() + " -> " + tikaEndpoint);
         }
 
         if (debug) {
@@ -312,7 +324,7 @@ public class TikaService {
             if (debug) {
                 logger.info("... sending OCR Request: " + serviceEndpoint.get());
             }
-            urlConnection = (HttpURLConnection) new URL(serviceEndpoint.get()).openConnection();
+            urlConnection = (HttpURLConnection) new URL(tikaEndpoint).openConnection();
             urlConnection.setRequestMethod("PUT");
             urlConnection.setDoOutput(true);
             urlConnection.setDoInput(true);
@@ -368,6 +380,170 @@ public class TikaService {
             if (printWriter != null)
                 printWriter.close();
         }
+    }
+
+    /**
+     * This method sends the content of a container document (e.g. .eml, .msg) to
+     * the Tika /rmeta/text endpoint for recursive text extraction.
+     * <p>
+     * The method always includes the text content of the container document itself
+     * (index 0 in the JSON response). Embedded documents (index 1..n) are only
+     * included if their embedded resource path matches the given embeddingsPattern.
+     * <p>
+     * The serviceEndpoint is expected to point to the /tika endpoint. This method
+     * replaces /tika with /rmeta/text automatically.
+     *
+     * @param fileData          - file content and metadata
+     * @param options           - optional tika header params
+     * @param embeddingsPattern - regex pattern to filter embedded documents by
+     *                          their resource path
+     * @return combined text content of container and matching embedded documents
+     * @throws IOException
+     */
+    public String doOCRProcessingRMetaText(FileData fileData, List<String> options, Pattern embeddingsPattern)
+            throws IOException {
+        boolean debug = logger.isLoggable(Level.FINE);
+
+        // read the Tika Service Endpoint
+        if (!serviceEndpoint.isPresent() || serviceEndpoint.get().isEmpty()) {
+            logger.severe(
+                    "OCR_SERVICE_ENDPOINT is missing - OCR processing not supported without a valid tika server endpoint!");
+            return null;
+        }
+
+        // build the /rmeta/text endpoint URL
+        String tikaEndpoint = serviceEndpoint.get();
+        String rmetaEndpoint;
+        if (tikaEndpoint.endsWith("/tika")) {
+            rmetaEndpoint = tikaEndpoint.substring(0, tikaEndpoint.length() - 5) + "/rmeta/text";
+        } else {
+            rmetaEndpoint = tikaEndpoint + "/rmeta/text";
+        }
+        logger.info("... /rmeta/text endpoint derived: " + tikaEndpoint + " -> " + rmetaEndpoint);
+
+        // adapt ContentType
+        String contentType = adaptContentType(fileData);
+
+        // validate content type
+        if (!acceptContentType(contentType)) {
+            if (debug) {
+                logger.info("contentType '" + contentType + "' is not supported by Tika Server");
+            }
+            return null;
+        }
+
+        PrintWriter printWriter = null;
+        HttpURLConnection urlConnection = null;
+        PrintWriter writer = null;
+        try {
+            if (debug) {
+                logger.info("... sending RMeta Request: " + rmetaEndpoint);
+            }
+            urlConnection = (HttpURLConnection) new URL(rmetaEndpoint).openConnection();
+            urlConnection.setRequestMethod("PUT");
+            urlConnection.setDoOutput(true);
+            urlConnection.setDoInput(true);
+            urlConnection.setAllowUserInteraction(false);
+
+            // set headers
+            urlConnection.setRequestProperty("Content-Type", contentType + "; charset=" + DEFAULT_ENCODING);
+            urlConnection.setRequestProperty("Accept", "application/json");
+
+            // apply optional X-Tika header options
+            if (options != null && options.size() > 0) {
+                for (String option : options) {
+                    int i = option.indexOf("=");
+                    if (i > -1) {
+                        String key = option.substring(0, i);
+                        String value = option.substring(i + 1);
+                        if (key.startsWith("X-Tika")) {
+                            urlConnection.setRequestProperty(key, value);
+                        } else {
+                            logger.warning("Invalid tika option : '" + option + "'  key must start with 'X-Tika'");
+                        }
+                    } else {
+                        logger.warning("Invalid tika option : '" + option + "'  character '=' expected!");
+                    }
+                }
+            }
+
+            urlConnection.setRequestProperty("Content-Length", "" + Integer.valueOf(fileData.getContent().length));
+            OutputStream output = urlConnection.getOutputStream();
+            writer = new PrintWriter(new OutputStreamWriter(output, DEFAULT_ENCODING), true);
+            output.write(fileData.getContent());
+            writer.flush();
+
+            int responseCode = urlConnection.getResponseCode();
+            if (debug) {
+                logger.info("... response code=" + responseCode);
+            }
+
+            if (responseCode >= 200 && responseCode <= 299) {
+                // parse the JSON response and filter embedded documents
+                return readRMetaResponse(urlConnection, DEFAULT_ENCODING, embeddingsPattern, debug);
+            }
+
+            logger.warning("... no data!");
+            return null;
+
+        } finally {
+            if (printWriter != null)
+                printWriter.close();
+        }
+    }
+
+    /**
+     * Reads and filters the JSON response from the Tika /rmeta/text endpoint.
+     * <p>
+     * The response is a JSON array where each element represents a document
+     * (container or embedded). The text content is stored in "X-TIKA:content"
+     * and the embedded resource path in "X-TIKA:embedded_resource_path".
+     * <p>
+     * Index 0 (the container document / mail body) is always included.
+     * Embedded documents (index 1..n) are only included if their
+     * "X-TIKA:embedded_resource_path" matches the given embeddingsPattern.
+     *
+     * @param urlConnection     - the open HTTP connection
+     * @param encoding          - character encoding
+     * @param embeddingsPattern - regex pattern to filter embedded documents
+     * @param debug             - enable debug logging
+     * @return combined text content
+     * @throws IOException
+     */
+    private String readRMetaResponse(HttpURLConnection urlConnection, String encoding,
+            Pattern embeddingsPattern, boolean debug) throws IOException {
+
+        StringBuilder combinedText = new StringBuilder();
+
+        try (InputStream is = urlConnection.getInputStream();
+                JsonReader jsonReader = Json.createReader(new InputStreamReader(is, encoding))) {
+
+            JsonArray jsonArray = jsonReader.readArray();
+            logger.info("... /rmeta/text response contains " + jsonArray.size() + " document(s)");
+
+            for (int i = 0; i < jsonArray.size(); i++) {
+                JsonObject jsonObject = jsonArray.getJsonObject(i);
+                String resourcePath = jsonObject.getString("X-TIKA:embedded_resource_path", "/");
+                String tikaContent = jsonObject.getString("X-TIKA:content", "");
+
+                if (i == 0) {
+                    // always include the container document (mail body)
+                    logger.info("... [0] including container document content");
+                    combinedText.append(tikaContent).append("\n\n");
+                } else {
+                    // apply embeddingsPattern filter for embedded documents
+                    if (embeddingsPattern != null && embeddingsPattern.matcher(resourcePath).find()) {
+                        logger.info("... [" + i + "] including embedded document: " + resourcePath);
+                        combinedText.append(tikaContent).append("\n\n");
+                    } else {
+                        logger.info("... [" + i + "] skipping embedded document: " + resourcePath
+                                + " (does not match embeddingsPattern)");
+                    }
+                }
+            }
+        }
+
+        return combinedText.toString();
     }
 
     /**
