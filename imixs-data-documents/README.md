@@ -2,7 +2,7 @@
 
 _Imixs-Data-Document_ is a sub-project of Imixs-Data. The project provides Services, Plugins and Adapter classes
 to extract textual information from attached documents during the processing life cycle of a workitem.
-This includes also 0ptical character recognition (OCR).
+This includes also Optical character recognition (OCR).
 The extracted textual information can be used for further processing or to search for documents.
 
 ## Text Extraction
@@ -14,72 +14,107 @@ The textual information for each attachment is stored as a custom attribute name
 
 The following environment variable is mandatory:
 
-- OCR_SERVICE_ENDPONT - defines the Rest API end-point of an Apache Tika instance.
+- `OCR_SERVICE_ENDPOINT` - defines the Rest API end-point of an Apache Tika instance.
 
-### The OCRDocumentAdapter
+---
 
-The Adapter class _org.imixs.workflow.documents.OCRDocumentAdapter_ is a signal adapter which can be bound on a specific BPMN event element.
+## The OCRDocumentAdapter
 
-    org.imixs.workflow.documents.OCRDocumentAdapter
-
-The TikaAdapter allows a more fine grained configuration of OCR processing. The environment variable _TIKA_SERVICE_MODE_ must be set to 'model'.
-
-### The OCRDocumentPlugin
-
-The TikaPlugin class _org.imixs.workflow.documents.OCRDocumentPlugin_ can be used as an alternative for the tika service mode 'auto'. The pugin extract textual information from document attachments based on the model configuration. You need to add the plugin to your model to activate it.
-
-    org.imixs.workflow.documents.OCRDocumentPlugin
-
-The environment variable _TIKA_SERVICE_MODE_ must be set to 'model'.
+The Adapter class `org.imixs.workflow.documents.OCRDocumentAdapter` is a signal adapter which can be bound on a specific BPMN event element.
+The environment variable `TIKA_SERVICE_MODE` must be set to `model` to activate the adapter.
 
 ### Configuration
 
-Both, the _OCRDocumentPlugin_ as also the _OCRDocumentAdapter_ can be configured on the BPMN Event level with optional Tika options. The tika options can be configured in the workflow result of the BPMN event element with the tag '_tika_' and the name '_options_'. See the following example:
+The adapter class is configured in the BPMN event workflow result using the `<imixs-ocr>` tag. Two modes are supported: **TIKA** (standard) and **RMETA** (recursive extraction).
 
-    <!-- Tika Options -->
-    <tika name="options">X-Tika-PDFocrStrategy=OCR_AND_TEXT_EXTRACTION</tika>
-    <tika name="options">X-Tika-PDFOcrImageType=RGB</tika>
-    <tika name="options">X-Tika-PDFOcrDPI=72</tika>
-    <tika name="options">X-Tika-OCRLanguage=eng+deu</tika>
-    <tika name="filepattern">(PDF|pdf)$</tika>
-    <tika name="maxpdfpages">1</tika>
+---
 
-In this example configuration the OCR processing will be started with 4 additional tika options.
+### Mode: TIKA (Standard)
 
-- X-Tika-PDFOcrImageType=RGB - set color mode
-- X-Tika-PDFOcrDPI=72 - set DPI to 72
-- X-Tika-OCRLanguage=deu - set OCR language to german
+The standard mode sends the document to the Tika `/tika` endpoint and adds the extracted text into the `$file` item of the workitem.
 
-#### Overriding the configured language as part of your request
+```xml
+<imixs-ocr name="TIKA">
+  <filepattern>(pdf|PDF|eml|msg)$</filepattern>
+  <maxpdfpages>20</maxpdfpages>
+  <option>X-Tika-PDFocrStrategy=OCR_ONLY</option>
+  <option>X-Tika-PDFOcrImageType=RGB</option>
+  <option>X-Tika-PDFOcrDPI=400</option>
+</imixs-ocr>
+```
 
-Different requests may need processing using different language models. These can be specified for specific requests using the X-Tika-OCRLanguage custom header. An example of this is shown below:
+**Parameters:**
 
-    X-Tika-OCRLanguage=deu
+| Parameter     | Description                                                |
+| ------------- | ---------------------------------------------------------- |
+| `filepattern` | Optional regex to filter attachments by filename           |
+| `maxpdfpages` | Optional maximum number of pages to scan for PDF documents |
+| `option`      | Optional Tika header options (must start with `X-Tika-`)   |
 
-Or for multiple languages:
+---
 
-    X-Tika-OCRLanguage: eng+fra"
+### Mode: RMETA (Recursive Metadata Extraction)
 
-For more details about the OCR configuration see the section 'OCR' below.
+The `RMETA` mode uses the Tika `/rmeta/text` endpoint which returns a structured JSON response containing the text content of the container document and all embedded documents separately. This is particularly useful for e-mail files (`.eml`, `.msg`) that contain attachments such as PDFs, ZIP archives or technical files.
 
-#### FilePattern Regex
+In contrast to the standard `TIKA` mode, the `RMETA` mode allows fine-grained control over which embedded documents are included in the extracted text via the `embeddingsPattern` parameter. Only embedded documents whose resource path matches the pattern are included. The mail body itself (container document, index 0) is always included.
 
-You can provide an optional filepattern as a regular expression to filter attachments to be parsed
+```xml
+<imixs-ocr name="RMETA">
+  <filepattern>(pdf|PDF|eml|msg)$</filepattern>
+  <embeddingsPattern>(pdf|PDF)$</embeddingsPattern>
+  <maxpdfpages>20</maxpdfpages>
+  <option>X-Tika-PDFocrStrategy=OCR_ONLY</option>
+  <option>X-Tika-PDFOcrImageType=RGB</option>
+  <option>X-Tika-PDFOcrDPI=400</option>
+</imixs-ocr>
+```
 
-Example - parse PDF files only:
+**Parameters:**
 
-    <tika name="filepattern">(PDF|pdf)$</tika>
+| Parameter           | Description                                                                             |
+| ------------------- | --------------------------------------------------------------------------------------- |
+| `filepattern`       | Optional regex to filter attachments by filename                                        |
+| `embeddingsPattern` | Optional regex to filter embedded documents by their resource path (e.g. `(pdf\|PDF)$`) |
+| `maxpdfpages`       | Optional maximum number of pages to scan for PDF documents                              |
+| `option`            | Optional Tika header options (must start with `X-Tika-`)                                |
 
-#### Max Pages of PDF Documents
+#### How RMETA Works
 
-With the optional parameter `maxpdfpages` you can controll how many pages of a PDF document will be scanned. This optional parameter can be used to reduce the size of very time and CPU intensive scan processing of the Tika service. For example you can set the param to 1 to onyl scann the first page of a PDF document
+When Tika processes a container file (e.g. an `.eml` with attachments - including ZIP attachments), the `/rmeta/text` endpoint returns a JSON array where each element represents one document in the hierarchy:
 
-    <tika name="maxpdfpages">1</tika>
+- **Index 0** – the container document itself (e.g. the mail body) → always included
+- **Index 1..n** – embedded documents (e.g. images, PDFs, files inside a ZIP) → included only if their resource path matches `embeddingsPattern`
 
-### The OCRDocumentService
+Example: an `.eml` file containing a PDF and a ZIP archive with a PDF and a `.step` CAD file:
 
-The `OCRDocumentService` is a general service to extract the textual information from file attachments during the processing life cycle independent form a BPMN model. The TikaDocumentService reacts on the CDI event 'BEFORE_PROCESS' and extracts the data automatically. The environment variable `OCR_SERVICE_MODE` must be set to 'auto' to activate this service.
-If set to 'model' the `TikaPlugin` or the `TikaAdapter` must be used in a BPMN model to activate the text extraction.
+```
+[0] /                               → mail body             ✅ always included
+[1] /image001.jpg                   → inline image          ⛔ skipped
+[2] /order.pdf                      → PDF attachment        ✅ matches (pdf|PDF)$
+[3] /drawings.zip/part.pdf          → PDF inside ZIP        ✅ matches (pdf|PDF)$
+[4] /drawings.zip/part.step         → CAD file inside ZIP   ⛔ skipped
+[5] /drawings.zip                   → ZIP container itself  ⛔ skipped
+```
+
+This ensures that only relevant content reaches downstream processing (e.g. an AI prompt), while large binary or technical files are cleanly excluded — even when nested inside ZIP archives.
+
+---
+
+## The OCRDocumentPlugin
+
+The Plugin class `org.imixs.workflow.documents.OCRDocumentPlugin` can be used as an alternative for the tika service mode 'auto'. The plugin extracts textual information from document attachments based on the model configuration. You need to add the plugin to your model to activate it.
+
+    `org.imixs.workflow.documents.OCRDocumentPlugin`
+
+The environment variable `TIKA_SERVICE_MODE` must be set to `model`.
+
+---
+
+## The OCRDocumentService
+
+The `OCRDocumentService` is a general service to extract the textual information from file attachments during the processing life cycle independent from a BPMN model. The service reacts on the CDI event `BEFORE_PROCESS` and extracts the data automatically. The environment variable `OCR_SERVICE_MODE` must be set to `auto` to activate this service.
+If set to `model` the `OCRDocumentPlugin` or the `OCRDocumentAdapter` must be used in a BPMN model to activate the text extraction.
 
 The following optional environment settings are supported:
 
@@ -88,8 +123,10 @@ The following optional environment settings are supported:
 | `OCR_SERVICE_ENDPOINT` | URL     | The Tika Endpoint URI                                     | http://tika:9998/tika |
 | `OCR_STRATEGY`         | String  | NO_OCR, OCR_ONLY, OCR_AND_TEXT_EXTRACTION, AUTO (default) | NO_OCR                |
 | `OCR_SERVICE_MODE`     | String  | Must be set to AUTO                                       | AUTO                  |
-| `OCR_FILEPATTERN`      | String  | Optional Reges for a file pattern                         | `(pdf)$`              |
+| `OCR_FILEPATTERN`      | String  | Optional Regex for a file pattern                         | `(pdf)$`              |
 | `OCR_MAXPDFPAGES`      | Integer | Max PDF Pages to be scanned                               | 10                    |
+
+---
 
 ## OCR
 
@@ -100,90 +137,62 @@ To run a Tika Server with Docker, the [official Docker image](https://hub.docker
 
     $ docker run -d -p 9998:9998 apache/tika:1.24.1-full
 
-The _TikaService_ EJB provides methods to extract textual information from documents attached to a Workitem. A valid Tika Server endpoint must exist.
-
 ### The TikaService
 
-The _TikaService_ extracts the textual information from file attachments calling the Tika Rest API Service endpoint. The following environment variables are supported:
+The _TikaService_ EJB provides methods to extract textual information from documents attached to a workitem. A valid Tika Server endpoint must exist.
 
-- OCR_SERVICE_ENDPOINT - defines the Rest API end-point of the Tika server (mandetory).
-- OCR_SERVICE_MAXFILESIZE - defines the maximum allowed file size in bytes (default is set to 5242880 = 5MB)
-- OCR_STRATEGY - Which strategy to use for OCR (AUTO|NO_OCR|OCR_AND_TEXT_EXTRACTION|OCR_ONLY)
+The following environment variables are supported:
 
-The environment variable OCR_SERVICE_ENDPOINT must point to a valid tika service.
+- `OCR_SERVICE_ENDPOINT` - defines the Rest API end-point of the Tika server (mandatory).
+- `OCR_SERVICE_MAXFILESIZE` - defines the maximum allowed file size in bytes (default is 5242880 = 5MB)
+- `OCR_STRATEGY` - which strategy to use for OCR (AUTO|NO_OCR|OCR_AND_TEXT_EXTRACTION|OCR_ONLY)
 
-With the OCR_SERVICE_MAXFILESIZE you can define the maximum allowed file size to scan. If a file is very large, this can take a lot of memory an processing time. The default max size of 5MB is a good recommendation.
+#### OCR_SERVICE_ENDPOINT
 
-With the optional environment variable OCR_STRATEGY the behavior how text is extracted from a PDF file can be controlled:
+The environment variable `OCR_SERVICE_ENDPOINT` must point to a valid tika service. If the endpoint does not include the `/tika` path segment it will be added automatically. The `/rmeta/text` endpoint is derived from this value automatically when using RMETA mode.
 
-**AUTO**
-<br />
-The best OCR strategy is chosen by the Tika Server itself. This is the default setting.
+    OCR_SERVICE_ENDPOINT=http://tika:9998/tika
 
-**NO_OCR**
-<br />
-OCR processing is disabled and text is extracted only from PDF files including a raw text. If a pdf file does not contain raw text data no text will be extracted!
+#### OCR Strategies
 
-**OCR_ONLY**
-<br />
-PDF files will always be OCR scanned even if the pdf file contains text data.
+With the optional environment variable `OCR_STRATEGY` the behavior of how text is extracted from a PDF file can be controlled:
 
-**OCR_AND_TEXT_EXTRACTION**
-<br />
-OCR processing and raw text extraction is performed. Note: This may result is a duplication of text and the mode is not recommended.
+**AUTO** – The best OCR strategy is chosen by the Tika Server itself. This is the default setting.
+
+**NO_OCR** – OCR processing is disabled and text is extracted only from PDF files including raw text. If a PDF file does not contain raw text data no text will be extracted.
+
+**OCR_ONLY** – PDF files will always be OCR scanned even if the PDF file contains text data.
+
+**OCR_AND_TEXT_EXTRACTION** – OCR processing and raw text extraction is performed. Note: This may result in a duplication of text and the mode is not recommended.
 
 ### Tika Options
 
-Out of the box, Apache Tika will start with the default configuration. By providing additional config options
-you can specify a custom tika configuration to be used by the tika server.
+By providing additional `X-Tika-*` options you can customize the Tika server behavior per BPMN event:
 
-For example to set the DPI mode call:
+```xml
+<option>X-Tika-PDFocrStrategy=OCR_AND_TEXT_EXTRACTION</option>
+<option>X-Tika-PDFOcrImageType=RGB</option>
+<option>X-Tika-PDFOcrDPI=72</option>
+<option>X-Tika-OCRLanguage=eng+deu</option>
+```
 
-    @EJB
-    TikaDocumentService tikaDocumentService;
-
-    // define options
-    List<String> options=new ArrayList<String>();
-    options.add("X-Tika-PDFocrStrategy=OCR_AND_TEXT_EXTRACTION");
-    options.add("X-Tika-PDFOcrImageType=RGB"); 	//  support colors
-    options.add("X-Tika-PDFOcrDPI=72");    			// set DPI
-    options.add("X-Tika-OCRLanguage=eng"); 			// set english language
-    // start ocr
-    tikaDocumentService.extractText(workitem, "TEXT_AND_OCR", options)
-
-**Note:** Options set by this method call overwrite the options defined in a tika config file.
-
-You have various options to configure the Tika server. Find details about how to configure imixs-tika [here](https://github.com/imixs/imixs-docker/tree/master/tika).
+For more details about the Tika configuration see:
 
 - https://cwiki.apache.org/confluence/display/TIKA/TikaServer
 - https://cwiki.apache.org/confluence/display/TIKA/TikaOCR
 - https://cwiki.apache.org/confluence/display/tika/PDFParser%20(Apache%20PDFBox)
 
-#### Example
+---
 
-In this example configuration the OCR processing will be started with 4 additional tika options.
+## Searching Documents
 
-- X-Tika-PDFOcrImageType=RGB - set color mode
-- X-Tika-PDFOcrDPI=72 - set DPI to 72
-- X-Tika-OCRLanguage=deu - set OCR language to german
+All extracted textual information from attached documents is also searchable by the Imixs search index. The class `org.imixs.workflow.documents.DocumentIndexer` adds the OCR content for each file attachment into the search index.
 
-#### Overriding the configured language as part of your request
-
-Different requests may need processing using different language models. These can be specified for specific requests using the X-Tika-OCRLanguage custom header. An example of this is shown below:
-
-    X-Tika-OCRLanguage=deu
-
-Or for multiple languages:
-
-    X-Tika-OCRLanguage: eng+fra"
-
-### Searching Documents
-
-All extracted textual information from attached documents is also searchable by the Imixs search index. The class _org.imixs.workflow.documents.DocumentIndexer_ adds the ocr content for each file attachment into the search index.
+---
 
 ## The e-Invoice Adapter
 
-The Adapter class `org.imixs.workflow.documents.EInvoiceAutoAdapter` can be used to extract data from an e-invoice document. The `EInvoiceAutoAdapter` class automatically resolve all relevant e-invoice fields. The following fields are supported:
+The Adapter class `org.imixs.workflow.documents.EInvoiceAutoAdapter` can be used to extract data from an e-invoice document. The `EInvoiceAutoAdapter` class automatically resolves all relevant e-invoice fields. The following fields are supported:
 
 | Item              | Type   | Description                |
 | ----------------- | ------ | -------------------------- |
@@ -201,21 +210,11 @@ The implementation of the EInvoice Adapter classes is based on the [Imixs e-invo
 
 The Adapter class `org.imixs.workflow.documents.EInvoiceMetaAdapter` can detect and extract content from e-invoice documents in different formats. This implementation is based on XPath expressions and can resolve custom fields not supported by the `EInvoiceAutoAdapter` class.
 
-The detection outcome of the adapter is a new item named 'einvoice.type' with the detected type of the e-invoice format. E.g:
+The detection outcome of the adapter is a new item named `einvoice.type` with the detected type of the e-invoice format. E.g:
 
 - Factur-X/ZUGFeRD 2.0
 
-The Adapter can be configured in an BPMN event to extract e-invoice data fields by the following entity definition
-
-```xml
-	  <e-invoice name="ENTITY">
-		<name>Item Name</name>
-		<type>Item Type (text|date|double</type>
-		<xpath>xPath expression</xpath>
-	  </e-invoice>
-```
-
-**Example e-invoice configuration:**
+The adapter can be configured in a BPMN event to extract e-invoice data fields:
 
 ```xml
 <e-invoice name="ENTITY">
@@ -238,18 +237,20 @@ The Adapter can be configured in an BPMN event to extract e-invoice data fields 
 </e-invoice>
 ```
 
-If the type is not set the item value will be treated as a String. Possible types are 'double' and 'date'
-If the document is not a e-invoice no items and also the einvoice.type field will be set.
+If the type is not set the item value will be treated as a String. Possible types are `double` and `date`.
+If the document is not an e-invoice no items and also the `einvoice.type` field will be set.
+
+---
 
 ## How to Install
 
 To include the imixs-data-documents plugins the following maven dependency can be added:
 
 ```xml
-	<!-- Imixs-Documents / Tika Service -->
-	<dependency>
-		<groupId>org.imixs.workflow</groupId>
-		<artifactId>imixs-data-documents</artifactId>
-		<scope>compile</scope>
-	</dependency>
+<!-- Imixs-Documents / Tika Service -->
+<dependency>
+    <groupId>org.imixs.workflow</groupId>
+    <artifactId>imixs-data-documents</artifactId>
+    <scope>compile</scope>
+</dependency>
 ```
