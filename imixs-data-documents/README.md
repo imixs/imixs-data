@@ -135,7 +135,7 @@ Tika extracts text from over a thousand different file types including PDF and o
 
 To run a Tika Server with Docker, the [official Docker image](https://hub.docker.com/r/apache/tika) can be used:
 
-    $ docker run -d -p 9998:9998 apache/tika:1.24.1-full
+    $ docker run -d -p 9998:9998 apache/tika:3.2.0.0-full
 
 ### The TikaService
 
