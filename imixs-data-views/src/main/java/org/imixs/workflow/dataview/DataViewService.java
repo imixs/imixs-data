@@ -63,7 +63,6 @@ public class DataViewService implements Serializable {
     private static final long serialVersionUID = 1L;
     private static Logger logger = Logger.getLogger(DataViewService.class.getName());
 
-    public static final String ITEM_WORKITEMREF = "$workitemref";
     public static final int MAX_ROWS = 9999;
     public static final String ERROR_API = "API_ERROR";
     public static final String ERROR_CONFIG = "CONFIG_ERROR";

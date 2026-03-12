@@ -50,7 +50,7 @@ public class DataGroupService implements Serializable {
     private static final long serialVersionUID = 1L;
     private static Logger logger = Logger.getLogger(DataGroupService.class.getName());
 
-    public static final String ITEM_WORKITEMREF = "$workitemref";
+    public static final String ITEM_WORKITEMREF = "$uniqueidref";
 
     public static final String API_ERROR = "API_ERROR";
     public static final String ERROR_MISSING_DATA = "MISSING_DATA";
@@ -86,7 +86,7 @@ public class DataGroupService implements Serializable {
      * Helper method to load a collection of all workitems referring to a data group
      * defined by a query. The query will be extended with the condition
      * 
-     * '$workitemref:<UNIQUEID>
+     * '$uniqueIdRef:<UNIQUEID>
      * 
      * @param query    - query
      * @param workitem - workitem defining the reference
@@ -94,7 +94,7 @@ public class DataGroupService implements Serializable {
      * @throws QueryException
      */
     public List<ItemCollection> findDataGroupReferences(String query, ItemCollection workitem) throws QueryException {
-        query = query + " ($workitemref:" + workitem.getUniqueID() + ")";
+        query = query + " (" + ITEM_WORKITEMREF + ":" + workitem.getUniqueID() + ")";
         List<ItemCollection> resultList = workflowService.getDocumentService().find(query, 1000, 0, "$modified", true);
         return resultList;
     }

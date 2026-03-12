@@ -29,7 +29,7 @@ The text extraction is based on [Apache Tika](https://tika.apache.org/) and is c
 
 ## Imixs-Data-Groups
 
-_Imixs-Data-Groups_ provides services and adapters to group and organize related workitems under a master process. A data group is a business process that is referenced by other processes within the same process instance via the item `$workitemref`.
+_Imixs-Data-Groups_ provides services and adapters to group and organize related workitems under a master process. A data group is a business process that is referenced by other processes within the same process instance via the item `$uniqueIdRef`.
 
 Typical use cases are consolidating payment transactions of a customer in a "Statement of Account", or grouping invoices that need to be exported into another IT system under an "Export process".
 

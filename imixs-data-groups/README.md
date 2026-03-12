@@ -5,7 +5,7 @@ Data groups allow you to organize and group related workitems under a master pro
 For example, you want to summarize all payment transactions of a customer in a consolidated 'Statement of Account'.
 Or you may want to group invoices that need to be exported into another IT system in an 'Export process'.
 
-A business process references a data group via the item `$workitemref`, which makes it easy to access data groups via the core API from Imixs-Workflow.
+A business process references a data group via the item `$uniqueIdRef`, which makes it easy to access data groups via the core API from Imixs-Workflow.
 
 ## Build a Data Group
 

@@ -62,7 +62,7 @@ import jakarta.inject.Inject;
  * </pre>
  * 
  * Note: The execution query will be extended by ' AND
- * ($workitemref:<UNIQUEID>)'
+ * ($uniqueidref:<UNIQUEID>)'
  * 
  * @author Ralph Soika
  * @version 1.0
