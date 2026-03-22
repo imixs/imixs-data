@@ -98,11 +98,6 @@ public class OCRDocumentAdapter implements SignalAdapter {
             List<ItemCollection> ocrRMetaDefinitions = workflowService.evalWorkflowResultXML(event, "imixs-ocr",
                     OCR_RMETA, workitem, false);
 
-            // Support deprecated configuration
-            if (ocrTikaDefinitions.size() == 0 && ocrRMetaDefinitions.size() == 0) {
-                return executeOldConfiguration(workitem, event);
-            }
-
             logger.info("├── Running OCR Adapter...");
 
             // Check TIKA mode
@@ -154,6 +149,11 @@ public class OCRDocumentAdapter implements SignalAdapter {
             }
 
         } catch (PluginException e) {
+            if ("INVALID_TAG_FORMAT".equals(e.getErrorCode())) {
+                // Support deprecated configuration
+                return executeOldConfiguration(workitem, event);
+            }
+
             String message = "OCR ERROR: TikaService - unable to extract text: " + e.getMessage();
             throw new AdapterException(e.getErrorContext(), e.getErrorCode(), message, e);
         } catch (RuntimeException e) {
