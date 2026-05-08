@@ -19,7 +19,7 @@ import jakarta.inject.Inject;
  * <p>
  * The adapter expect the following environment setting
  * 
- * TIKA_SERVICE_MODE: "MODEL"
+ * OCR_SERVICE_MODE: "MODEL"
  * 
  * You can set additional options to be passed to the Tika Service in a
  * corresponding BPMN configuration
@@ -87,8 +87,8 @@ public class OCRDocumentAdapter implements SignalAdapter {
         long processingTime = System.currentTimeMillis();
 
         if (!"model".equalsIgnoreCase(serviceMode)) {
-            logger.info("├── ⚠️ Unexpected TIKA_SERVICE_MODE=" + serviceMode
-                    + " - running the OCRDocumentAdapter the env TIKA_SERVICE_MODE should be set to 'model'. Adapter will be ignored!");
+            logger.info("├── ⚠️ Unexpected OCR_SERVICE_MODE=" + serviceMode
+                    + " - running the OCRDocumentAdapter the env OCR_SERVICE_MODE should be set to 'model'. Adapter will be ignored!");
             logger.info("└── Running in Server Mode!");
             return workitem;
         }

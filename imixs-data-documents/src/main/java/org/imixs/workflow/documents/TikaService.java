@@ -55,7 +55,7 @@ import jakarta.json.JsonReader;
  * The service expects a valid Rest API end-point to an instance of a Tika
  * Server defined by the Environment Parameter 'TIKA_SERVICE_ENDPONT'.
  * <p>
- * The environment parameter 'TIKA_SERVICE_MODE' must be set to 'auto' to enable
+ * The environment parameter 'OCR_SERVICE_MODE' must be set to 'auto' to enable
  * the service.
  * <p>
  * See also the project: https://github.com/imixs/imixs-docker/tree/master/tika
@@ -135,8 +135,7 @@ public class TikaService {
      * @param maxPdfPages       - optional maximum number of pages for PDF documents
      * @param embeddingsPattern - optional regex to filter embedded documents by
      *                          resource path, use /rmeta/text endpoint for
-     *                          recursive
-     *                          extraction
+     *                          recursive extraction
      * @throws PluginException
      * @throws AdapterException
      */
@@ -496,11 +495,11 @@ public class TikaService {
      * Reads and filters the JSON response from the Tika /rmeta/text endpoint.
      * <p>
      * The response is a JSON array where each element represents a document
-     * (container or embedded). The text content is stored in "X-TIKA:content"
-     * and the embedded resource path in "X-TIKA:embedded_resource_path".
+     * (container or embedded). The text content is stored in "X-TIKA:content" and
+     * the embedded resource path in "X-TIKA:embedded_resource_path".
      * <p>
-     * Index 0 (the container document / mail body) is always included.
-     * Embedded documents (index 1..n) are only included if their
+     * Index 0 (the container document / mail body) is always included. Embedded
+     * documents (index 1..n) are only included if their
      * "X-TIKA:embedded_resource_path" matches the given embeddingsPattern.
      *
      * @param urlConnection     - the open HTTP connection

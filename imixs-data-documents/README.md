@@ -1,27 +1,64 @@
 # Imixs-Data-Documents
 
-_Imixs-Data-Document_ is a sub-project of Imixs-Data. The project provides Services, Plugins and Adapter classes
-to extract textual information from attached documents during the processing life cycle of a workitem.
-This includes also Optical character recognition (OCR).
+_Imixs-Data-Document_ is a sub-project of Imixs-Data. The project provides Services, Plugins
+and Adapter classes to extract textual information from attached documents during the processing
+life cycle of a workitem. This includes Optical Character Recognition (OCR).
 The extracted textual information can be used for further processing or to search for documents.
 
-## Text Extraction
+## Overview
 
-The text extraction is mainly based on the [Apache Tika Project](https://tika.apache.org/). The text extraction can be controlled based on a BPMN model
-through the corresponding adapter or plug-in class. For a more general and model independent text extraction the OCRDocumentService can be used.
+The text extraction is based on the [Apache Tika Project](https://tika.apache.org/) and is
+controlled by the environment variable `OCR_SERVICE_MODE`:
 
-The textual information for each attachment is stored as a custom attribute named 'text' into the FileData object of a workitem. This information can be used by applications to analyse, verify or process textual information of any document type.
+| Mode    | Component            | Description                                                    |
+| ------- | -------------------- | -------------------------------------------------------------- |
+| `auto`  | `OCRDocumentService` | Processes all attachments automatically on every process event |
+| `model` | `OCRDocumentAdapter` | Extraction is triggered by a specific BPMN event               |
+| `model` | `OCRDocumentPlugin`  | Extraction is triggered model-wide via a BPMN plugin           |
 
-The following environment variable is mandatory:
+> **Recommendation:** Since OCR processing can be resource-intensive, it is recommended to use
+> `model` mode. This allows fine-grained control over when and which documents are processed,
+> directly within the BPMN model.
+
+The following environment variable is mandatory for all modes:
 
 - `OCR_SERVICE_ENDPOINT` - defines the Rest API end-point of an Apache Tika instance.
 
+The textual content of each attachment is stored as a custom attribute called `'text'` within
+the `FileData` object of a work item. This allows applications to analyze, verify, or process
+the extracted text of any document type.
+
 ---
 
-## The OCRDocumentAdapter
+## Mode: auto — The OCRDocumentService
 
-The Adapter class `org.imixs.workflow.documents.OCRDocumentAdapter` is a signal adapter which can be bound on a specific BPMN event element.
-The environment variable `TIKA_SERVICE_MODE` must be set to `model` to activate the adapter.
+The `OCRDocumentService` is a general-purpose service that automatically extracts text from
+**all** file attachments during the processing life cycle, independent of a BPMN model.
+It reacts on the CDI event `BEFORE_PROCESS`.
+
+Set `OCR_SERVICE_MODE=auto` to activate this service.
+
+> **Note:** Without an `OCR_FILEPATTERN`, every attachment of every work item will be sent to
+> the Tika service on each process event. Use `OCR_FILEPATTERN` to limit processing to relevant
+> file types.
+
+The following environment settings are supported:
+
+| Environment Setting    | Type    | Description                                               | Example               |
+| ---------------------- | ------- | --------------------------------------------------------- | --------------------- |
+| `OCR_SERVICE_ENDPOINT` | URL     | The Tika Endpoint URI (mandatory)                         | http://tika:9998/tika |
+| `OCR_SERVICE_MODE`     | String  | Must be set to `auto`                                     | auto                  |
+| `OCR_STRATEGY`         | String  | NO_OCR, OCR_ONLY, OCR_AND_TEXT_EXTRACTION, AUTO (default) | NO_OCR                |
+| `OCR_FILEPATTERN`      | String  | Optional regex to limit processing to specific file types | `(pdf\|PDF)$`         |
+| `OCR_MAXPDFPAGES`      | Integer | Max PDF pages to be scanned                               | 10                    |
+
+---
+
+## Mode: model — The OCRDocumentAdapter
+
+The Adapter class `org.imixs.workflow.documents.OCRDocumentAdapter` is a signal adapter that can be bound on a specific BPMN event element. This gives the process modeler full control over when OCR extraction is triggered and for which file types.
+
+**Note:** Set `OCR_SERVICE_MODE=model` to activate adapter and plugin based processing.
 
 ### Configuration
 
@@ -31,7 +68,7 @@ The adapter class is configured in the BPMN event workflow result using the `<im
 
 ### Mode: TIKA (Standard)
 
-The standard mode sends the document to the Tika `/tika` endpoint and adds the extracted text into the `$file` item of the workitem.
+The standard mode sends the document to the Tika `/tika` endpoint and adds the extracted text content into the `$file` item of the workitem.
 
 ```xml
 <imixs-ocr name="TIKA">
@@ -101,30 +138,27 @@ This ensures that only relevant content reaches downstream processing (e.g. an A
 
 ---
 
-## The OCRDocumentPlugin
+## Mode: model — The OCRDocumentPlugin
 
-The Plugin class `org.imixs.workflow.documents.OCRDocumentPlugin` can be used as an alternative for the tika service mode 'auto'. The plugin extracts textual information from document attachments based on the model configuration. You need to add the plugin to your model to activate it.
+The `OCRDocumentPlugin` provides model-wide text extraction without requiring any
+configuration on individual BPMN events. Simply add the plugin class to your BPMN
+model to activate it:
 
-    `org.imixs.workflow.documents.OCRDocumentPlugin`
+    org.imixs.workflow.documents.OCRDocumentPlugin
 
-The environment variable `TIKA_SERVICE_MODE` must be set to `model`.
+`OCR_SERVICE_MODE` must be set to `model`.
 
----
+**Default behavior:** If no `<imixs-ocr>` tag is present in a BPMN event, the plugin
+automatically processes all attachments using default settings — no further configuration
+needed.
 
-## The OCRDocumentService
+**Optional per-event configuration:** For fine-grained control, individual BPMN events
+can optionally provide an `<imixs-ocr>` configuration. Both **TIKA** and **RMETA** modes
+are supported, using the same configuration format as the `OCRDocumentAdapter`.
 
-The `OCRDocumentService` is a general service to extract the textual information from file attachments during the processing life cycle independent from a BPMN model. The service reacts on the CDI event `BEFORE_PROCESS` and extracts the data automatically. The environment variable `OCR_SERVICE_MODE` must be set to `auto` to activate this service.
-If set to `model` the `OCRDocumentPlugin` or the `OCRDocumentAdapter` must be used in a BPMN model to activate the text extraction.
-
-The following optional environment settings are supported:
-
-| Environment Setting    | Type    | Description                                               | Example               |
-| ---------------------- | ------- | --------------------------------------------------------- | --------------------- |
-| `OCR_SERVICE_ENDPOINT` | URL     | The Tika Endpoint URI                                     | http://tika:9998/tika |
-| `OCR_STRATEGY`         | String  | NO_OCR, OCR_ONLY, OCR_AND_TEXT_EXTRACTION, AUTO (default) | NO_OCR                |
-| `OCR_SERVICE_MODE`     | String  | Must be set to AUTO                                       | AUTO                  |
-| `OCR_FILEPATTERN`      | String  | Optional Regex for a file pattern                         | `(pdf)$`              |
-| `OCR_MAXPDFPAGES`      | Integer | Max PDF Pages to be scanned                               | 10                    |
+> **Plugin vs. Adapter:** Use the plugin when OCR should run on all events model-wide
+> with minimal configuration. Use the `OCRDocumentAdapter` when extraction must be bound
+> to a specific BPMN event only.
 
 ---
 

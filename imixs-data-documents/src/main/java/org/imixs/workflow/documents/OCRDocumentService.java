@@ -24,7 +24,7 @@ import jakarta.inject.Inject;
  * Parameter 'TIKA_SERVICE_ENDPONT'. If the TIKA_SERVICE_ENDPONT is not set,
  * then the service will be skipped.
  * <p>
- * The environment parameter 'TIKA_SERVICE_MODE' must be set to 'auto' to enable
+ * The environment parameter 'OCR_SERVICE_MODE' must be set to 'auto' to enable
  * the service.
  * <p>
  * See also the project: https://github.com/imixs/imixs-docker/tree/master/tika
