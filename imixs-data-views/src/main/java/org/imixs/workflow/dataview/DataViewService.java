@@ -111,8 +111,7 @@ public class DataViewService implements Serializable {
 
     /**
      * Returns a List of ItemCollection instances representing the view column
-     * description.
-     * Each column has the items:
+     * description. Each column has the items:
      * 
      * name,label,format,convert
      * 
@@ -258,9 +257,9 @@ public class DataViewService implements Serializable {
      * data in a dataViewDefinition.
      * <p>
      * The export method sends a DataViewExportEvent. An observer CID bean can
-     * implement alternative exporters.
-     * With the event property 'completed' a client can signal that the export
-     * process is completed. Otherwise the default behavior will be adapted.
+     * implement alternative exporters. With the event property 'completed' a client
+     * can signal that the export process is completed. Otherwise the default
+     * behavior will be adapted.
      * 
      * 
      * 
@@ -319,8 +318,7 @@ public class DataViewService implements Serializable {
 
     /**
      * This helper method inserts for each ItemCollection of a DataSet a new row
-     * into a POI
-     * XSSFSheet based on a DataViewDefintion.
+     * into a POI XSSFSheet based on a DataViewDefintion.
      * 
      * @param dataset
      * @param referenceCell
@@ -356,23 +354,23 @@ public class DataViewService implements Serializable {
                 String name = itemDef.getItemValueString("item.name");
                 try {
                     switch (type) {
-                        case "xs:double":
-                            row.getCell(cellNum).setCellValue(workitem.getItemValueDouble(name));
-                            break;
-                        case "xs:float":
-                            row.getCell(cellNum).setCellValue(workitem.getItemValueFloat(name));
-                            break;
-                        case "xs:int":
-                            row.getCell(cellNum).setCellValue(workitem.getItemValueInteger(name));
-                            break;
-                        case "xs:date":
-                            row.getCell(cellNum).setCellValue(workitem.getItemValueDate(name));
-                            break;
-                        default:
-                            row.getCell(cellNum).setCellValue(workitem.getItemValueString(name));
+                    case "xs:double":
+                        row.getCell(cellNum).setCellValue(workitem.getItemValueDouble(name));
+                        break;
+                    case "xs:float":
+                        row.getCell(cellNum).setCellValue(workitem.getItemValueFloat(name));
+                        break;
+                    case "xs:int":
+                        row.getCell(cellNum).setCellValue(workitem.getItemValueInteger(name));
+                        break;
+                    case "xs:date":
+                        row.getCell(cellNum).setCellValue(workitem.getItemValueDate(name));
+                        break;
+                    default:
+                        row.getCell(cellNum).setCellValue(workitem.getItemValueString(name));
                     }
                 } catch (Exception epoi) {
-                    logger.warning("POI Error cell " + cellNum + " item: " + name);
+                    logger.warning("POI Error cell " + cellNum + " item: " + name + " - Error: " + epoi.getMessage());
                 }
                 cellNum++;
             }
