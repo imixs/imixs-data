@@ -14,12 +14,6 @@
 
 package org.imixs.workflow.datagroup;
 
-import java.io.ByteArrayOutputStream;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
-import java.nio.charset.StandardCharsets;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -172,7 +166,12 @@ public class DataGroupExportAdapter implements SignalAdapter {
                 logger.info("│   ├── export data....");
             }
             if ("csv".equalsIgnoreCase(type)) {
-                fileRawData = exportCSV(workitem, dataViewDefinition, separator);
+                List<ItemCollection> data = dataGroupService.loadData(workitem.getUniqueID(), DataViewService.MAX_ROWS,
+                        0,
+                        null, false, false);
+                List<ItemCollection> viewItemDefinitions = dataViewService
+                        .computeDataViewItemDefinitions(dataViewDefinition);
+                fileRawData = dataViewService.exportCSV(data, viewItemDefinitions, separator);
                 FileData fileData = new FileData(targetname, fileRawData, "application/text", null);
                 workitem.addFileData(fileData);
                 logger.info("│   ├── ✅ export successful");
@@ -193,147 +192,6 @@ public class DataGroupExportAdapter implements SignalAdapter {
                     "⚠️ Failed to export dataGroup: " + e.getMessage(), e);
         }
 
-    }
-
-    /**
-     * Writes a CSV File into a bye array based on the given ViewItems definition
-     * and the data collection
-     * 
-     * @param data
-     * @throws QueryException
-     */
-    private byte[] exportCSV(ItemCollection workitem, ItemCollection dataViewDefinition, String separator)
-            throws QueryException {
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        PrintWriter writer = new PrintWriter(new OutputStreamWriter(byteArrayOutputStream, StandardCharsets.UTF_8));
-
-        List<ItemCollection> viewItemDefinitions = dataViewService
-                .computeDataViewItemDefinitions(dataViewDefinition);
-
-        // write header
-        String header = "";
-        for (ItemCollection itemDef : viewItemDefinitions) {
-            String label = itemDef.getItemValueString("item.label");
-            header = header + escapeCSVField(label) + separator;
-        }
-        // cut last separator...
-        if (header.length() > 0) {
-            header = header.substring(0, header.length() - separator.length());
-        }
-        writer.println(header);
-
-        int page = 0;
-        while (true) {
-            List<ItemCollection> data = dataGroupService.loadData(workitem.getUniqueID(), 500, page, null, false,
-                    false);
-
-            if (data.size() == 0) {
-                break;
-            }
-            logger.info("│   ├── ☑️ loaded data - " + data.size() + " workitems found");
-            // iterate over the data
-            for (ItemCollection dataWorkitem : data) {
-                String line = "";
-                // build each column
-                for (ItemCollection itemDef : viewItemDefinitions) {
-                    String type = itemDef.getItemValueString("item.type");
-                    String name = itemDef.getItemValueString("item.name");
-                    String format = itemDef.getItemValueString("item.format"); // optional
-
-                    String fieldValue = "";
-
-                    switch (type) {
-                        case "xs:double":
-                            double _double = dataWorkitem.getItemValueDouble(name);
-                            if (format != null && !format.isEmpty()) {
-                                fieldValue = String.format(format, _double);
-                            } else {
-                                fieldValue = String.valueOf(_double);
-                            }
-                            break;
-
-                        case "xs:float":
-                            float _float = dataWorkitem.getItemValueFloat(name);
-                            if (format != null && !format.isEmpty()) {
-                                fieldValue = String.format(format, _float);
-                            } else {
-                                fieldValue = String.valueOf(_float);
-                            }
-                            break;
-
-                        case "xs:int":
-                            int _int = dataWorkitem.getItemValueInteger(name);
-                            if (format != null && !format.isEmpty()) {
-                                fieldValue = String.format(format, _int);
-                            } else {
-                                fieldValue = String.valueOf(_int);
-                            }
-                            break;
-
-                        case "xs:date":
-                            Date _date = dataWorkitem.getItemValueDate(name);
-                            if (_date != null) {
-                                if (format != null && !format.isEmpty()) {
-                                    SimpleDateFormat sdf = new SimpleDateFormat(format);
-                                    fieldValue = sdf.format(_date);
-                                } else {
-                                    fieldValue = _date.toString();
-                                }
-                            }
-                            break;
-
-                        default:
-                            // string
-                            String value = dataWorkitem.getItemValueString(name);
-                            if (value != null) {
-                                if (format != null && !format.isEmpty()) {
-                                    fieldValue = String.format(format, value);
-                                } else {
-                                    fieldValue = value;
-                                }
-                            }
-                            break;
-                    }
-
-                    line = line + escapeCSVField(fieldValue) + separator;
-                }
-
-                // cut last separator...
-                if (line.length() > 0) {
-                    line = line.substring(0, line.length() - separator.length());
-                }
-
-                // add line
-                writer.println(line);
-            }
-
-            // next page
-            page++;
-        }
-
-        writer.flush();
-        writer.close();
-
-        return byteArrayOutputStream.toByteArray();
-    }
-
-    /**
-     * Escapes CSV fields by wrapping them in quotes if they contain
-     * separator, newline, or quote characters
-     */
-    private String escapeCSVField(String field) {
-        if (field == null) {
-            return "";
-        }
-
-        // If field contains separator, newline, or quotes, wrap in quotes
-        if (field.contains(",") || field.contains(";") || field.contains("\n") ||
-                field.contains("\r") || field.contains("\"")) {
-            // Escape existing quotes by doubling them
-            return "\"" + field.replace("\"", "\"\"") + "\"";
-        }
-
-        return field;
     }
 
     /**
@@ -358,7 +216,7 @@ public class DataGroupExportAdapter implements SignalAdapter {
         List<ItemCollection> workitems = dataGroupService.loadData(uniqueid, DataViewService.MAX_ROWS, 0, sortBy, false,
                 false);
 
-        FileData fileDataExport = dataViewService.poiExport(workitems, dataViewDefinition, viewItemDefinitions);
+        FileData fileDataExport = dataViewService.exportPOI(workitems, dataViewDefinition, viewItemDefinitions);
 
         // create a temp event
         ItemCollection event = new ItemCollection().setItemValue("txtActivityResult",

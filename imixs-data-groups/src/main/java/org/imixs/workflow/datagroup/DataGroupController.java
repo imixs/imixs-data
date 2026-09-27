@@ -51,8 +51,8 @@ import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * The DataGroupController provides methods to display a data group. The
- * controller extends the ViewController class to display a list of
- * references to the current workflow group. The controller supports pagination.
+ * controller extends the ViewController class to display a list of references
+ * to the current workflow group. The controller supports pagination.
  * <p>
  * The controller can optional load a DataView definition to compute the query
  * and the column sets. If no DataView definition is set, the controller
@@ -228,8 +228,8 @@ public class DataGroupController extends ViewController {
     }
 
     /**
-     * Set options and parse dataViewName from options.
-     * The expected format of the options string is:
+     * Set options and parse dataViewName from options. The expected format of the
+     * options string is:
      * <p>
      * "dataview=DATAVIEWNAME"
      * 
@@ -315,7 +315,7 @@ public class DataGroupController extends ViewController {
             List<ItemCollection> workitems = documentService.find(dataGroupQuery, DataViewService.MAX_ROWS, 0, sortBy,
                     dataViewDefinition.getItemValueBoolean("sort.reverse"));
 
-            FileData fileDataExport = dataViewService.poiExport(workitems, dataViewDefinition, viewItemDefinitions);
+            FileData fileDataExport = dataViewService.exportPOI(workitems, dataViewDefinition, viewItemDefinitions);
 
             // create a temp event
             ItemCollection event = new ItemCollection().setItemValue("txtActivityResult",

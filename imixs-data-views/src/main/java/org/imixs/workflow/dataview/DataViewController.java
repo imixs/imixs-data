@@ -341,7 +341,7 @@ public class DataViewController extends ViewController {
             List<ItemCollection> workitems = documentService.find(query, DataViewService.MAX_ROWS, 0, sortBy,
                     dataViewDefinition.getItemValueBoolean("sort.reverse"));
 
-            fileDataExport = dataViewService.poiExport(workitems, dataViewDefinition, viewItemDefinitions);
+            fileDataExport = dataViewService.exportPOI(workitems, dataViewDefinition, viewItemDefinitions);
 
             // create a temp event
             ItemCollection event = new ItemCollection().setItemValue("txtActivityResult",

@@ -18,7 +18,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -27,6 +30,7 @@ import java.util.Map;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
+import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellCopyPolicy;
 import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.xssf.usermodel.XSSFRow;
@@ -265,7 +269,7 @@ public class DataViewService implements Serializable {
      * 
      * @throws PluginException
      */
-    public FileData poiExport(List<ItemCollection> dataset, ItemCollection dataViewDefinition,
+    public FileData exportPOI(List<ItemCollection> dataset, ItemCollection dataViewDefinition,
             List<ItemCollection> viewItemDefinitions) throws PluginException {
 
         boolean debug = dataViewDefinition.getItemValueBoolean("debug");
@@ -296,7 +300,7 @@ public class DataViewService implements Serializable {
                 dataViewExportEvents.fire(event); // found FileData?
                 if (!event.isCompleted()) {
                     // Default behavior
-                    insertRows(dataset, dataViewDefinition, viewItemDefinitions, doc);
+                    insertPOIRows(dataset, dataViewDefinition, viewItemDefinitions, doc);
                 }
             }
 
@@ -325,15 +329,26 @@ public class DataViewService implements Serializable {
      * @param viewItemDefinitions
      * @param doc
      */
-    private void insertRows(List<ItemCollection> dataset, ItemCollection dataViewDefinition,
+    private void insertPOIRows(List<ItemCollection> dataset, ItemCollection dataViewDefinition,
             List<ItemCollection> viewItemDefinitions, XSSFWorkbook doc) {
+
         String referenceCell = dataViewDefinition.getItemValueString("poi.referenceCell");
+        if (referenceCell == null || referenceCell.isBlank()) {
+            logger.warning("Invalid DataView Definition - POI does not define a valid reference cell '" + referenceCell
+                    + "'!");
+        }
 
         // NOTE: we only take the first sheet !
         XSSFSheet sheet = doc.getSheetAt(0);
-
         CellReference cr = new CellReference(referenceCell);
         XSSFRow referenceRow = sheet.getRow(cr.getRow());
+
+        if (dataset == null || dataset.size() == 0) {
+            // no data - just clear the reference/template row, do not shift anything
+            clearPOIRow(referenceRow);
+            return;
+        }
+
         int referenceRowPos = referenceRow.getRowNum() + 1;
         int rowPos = referenceRowPos;
         // int lastRow = sheet.getLastRowNum();
@@ -382,4 +397,122 @@ public class DataViewService implements Serializable {
 
     }
 
+    /**
+     * Clears all cell values of a given row without shifting or removing the row
+     * itself. Used when there is no data to export, so the template/reference row
+     * stays empty.
+     *
+     * @param row - the row to clear
+     */
+    private void clearPOIRow(XSSFRow row) {
+        if (row == null) {
+            return;
+        }
+        for (Cell cell : row) {
+            cell.setBlank();
+        }
+    }
+
+    /**
+     * Writes a CSV file into a byte array based on the given view item definitions
+     * and dataset.
+     * <p>
+     * This method is shared by different export adapters (e.g.
+     * DataGroupExportAdapter, DataViewExportAdapter) so the CSV formatting logic
+     * exists only once.
+     *
+     * @param dataset             - the data to export
+     * @param viewItemDefinitions - column definitions
+     * @param separator           - CSV separator
+     * @return csv content as byte array
+     */
+    public byte[] exportCSV(List<ItemCollection> dataset, List<ItemCollection> viewItemDefinitions, String separator) {
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        PrintWriter writer = new PrintWriter(new OutputStreamWriter(byteArrayOutputStream, StandardCharsets.UTF_8));
+
+        // write header
+        String header = "";
+        for (ItemCollection itemDef : viewItemDefinitions) {
+            String label = itemDef.getItemValueString("item.label");
+            header = header + escapeCSVField(label) + separator;
+        }
+        if (header.length() > 0) {
+            header = header.substring(0, header.length() - separator.length());
+        }
+        writer.println(header);
+
+        for (ItemCollection dataWorkitem : dataset) {
+            String line = "";
+            for (ItemCollection itemDef : viewItemDefinitions) {
+                String type = itemDef.getItemValueString("item.type");
+                String name = itemDef.getItemValueString("item.name");
+                String format = itemDef.getItemValueString("item.format"); // optional
+                String fieldValue = "";
+
+                switch (type) {
+                case "xs:double":
+                    double _double = dataWorkitem.getItemValueDouble(name);
+                    fieldValue = (format != null && !format.isEmpty())
+                            ? String.format(format, _double)
+                            : String.valueOf(_double);
+                    break;
+                case "xs:float":
+                    float _float = dataWorkitem.getItemValueFloat(name);
+                    fieldValue = (format != null && !format.isEmpty())
+                            ? String.format(format, _float)
+                            : String.valueOf(_float);
+                    break;
+                case "xs:int":
+                    int _int = dataWorkitem.getItemValueInteger(name);
+                    fieldValue = (format != null && !format.isEmpty())
+                            ? String.format(format, _int)
+                            : String.valueOf(_int);
+                    break;
+                case "xs:date":
+                    Date _date = dataWorkitem.getItemValueDate(name);
+                    if (_date != null) {
+                        if (format != null && !format.isEmpty()) {
+                            SimpleDateFormat sdf = new SimpleDateFormat(format);
+                            fieldValue = sdf.format(_date);
+                        } else {
+                            fieldValue = _date.toString();
+                        }
+                    }
+                    break;
+                default:
+                    String value = dataWorkitem.getItemValueString(name);
+                    if (value != null) {
+                        fieldValue = (format != null && !format.isEmpty())
+                                ? String.format(format, value)
+                                : value;
+                    }
+                    break;
+                }
+                line = line + escapeCSVField(fieldValue) + separator;
+            }
+            if (line.length() > 0) {
+                line = line.substring(0, line.length() - separator.length());
+            }
+            writer.println(line);
+        }
+
+        writer.flush();
+        writer.close();
+        return byteArrayOutputStream.toByteArray();
+    }
+
+    /**
+     * Escapes CSV fields by wrapping them in quotes if they contain separator,
+     * newline, or quote characters.
+     */
+    private String escapeCSVField(String field) {
+        if (field == null) {
+            return "";
+        }
+        if (field.contains(",") || field.contains(";") || field.contains("\n") ||
+                field.contains("\r") || field.contains("\"")) {
+            return "\"" + field.replace("\"", "\"\"") + "\"";
+        }
+        return field;
+    }
 }

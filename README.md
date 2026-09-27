@@ -46,11 +46,9 @@ The `DataGroupAdapter` supports the following operations:
 
 ## Imixs-Data-Views
 
-_Imixs-Data-Views_ provides methods to define, select and export data views. A data view is a reusable query and column definition that can be used across modules — for example the `DataGroupExportAdapter` uses data view definitions to produce structured exports.
+_Imixs-Data-Views_ provides methods to define, select and export data views. A data view is a reusable query and column definition that can be used across modules. The `DataViewExportAdapter` exports a data view directly based on its own query, while the `DataGroupExportAdapter` (see Imixs-Data-Groups) uses a data view definition to export the workitems referenced by a data group.
 
 → [Full Documentation](https://github.com/imixs/imixs-data/tree/main/imixs-data-views)
-
----
 
 ## Imixs-Data-Importer
 
