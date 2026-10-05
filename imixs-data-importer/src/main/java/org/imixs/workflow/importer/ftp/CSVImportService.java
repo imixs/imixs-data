@@ -41,11 +41,13 @@ import java.nio.file.Paths;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.apache.commons.net.ftp.FTP;
@@ -127,12 +129,16 @@ public class CSVImportService {
             String ftpServer = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_SERVER);
 
             String csvSelector = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_SELECTOR);
+            // CHANGED: validate the selector BEFORE it is used (the null check was
+            // previously done after startsWith()) and abort on an invalid selector
+            // instead of only logging it.
+            if (csvSelector == null || csvSelector.isBlank() || !csvSelector.toLowerCase().endsWith(".csv")) {
+                String error = "invalid selector - .csv file path missing - " + csvSelector;
+                documentImportService.logMessage("│   ├── ⚠️ " + error, event);
+                throw new PluginException(this.getClass().getName(), CONFIG_ERROR, error);
+            }
             if (!csvSelector.startsWith("/") && !csvSelector.startsWith("./")) {
                 csvSelector = "/" + csvSelector;
-            }
-            if (csvSelector == null || csvSelector.isEmpty() || !csvSelector.toLowerCase().endsWith(".csv")) {
-                documentImportService.logMessage("...invalid selector - .csv file path missing - " + csvSelector,
-                        event);
             }
             documentImportService.logMessage("├── csv import: " + csvSelector, event);
 
@@ -221,15 +227,22 @@ public class CSVImportService {
                     documentImportService.logMessage("├── ✅ no data changes since last import.", event);
                 }
             } else {
+                // CHANGED: fileData is null in this branch, so the former call to
+                // fileData.getName() caused a NullPointerException. Also the import is now
+                // marked as failed and stopped, instead of being reported as completed.
                 documentImportService.logMessage(
-                        "...Warning - invalid file content '" + fileData.getName() + "' - file will be deleted!",
-                        event);
+                        "├── ⚠️ no file content available for '" + csvSelector + "' - import skipped.", event);
+                event.setResult(DocumentImportEvent.PROCESSING_ERROR);
+                return;
             }
         } catch (PluginException | NoSuchAlgorithmException | IOException e) {
-            logger.severe("Data Error: " + e.getMessage());
-            e.printStackTrace();
+            // CHANGED: use the logger instead of printStackTrace()
+            logger.log(Level.SEVERE, "Data Error: " + e.getMessage(), e);
             documentImportService.logMessage("├── ⚠️ file import failed: " + e.getMessage(), event);
             event.setResult(DocumentImportEvent.PROCESSING_ERROR);
+            // CHANGED: entities written before the error must be searchable, so the
+            // index is flushed also in the error case.
+            indexUpdateService.updateIndex();
             return;
         }
         // flush index...
@@ -294,13 +307,22 @@ public class CSVImportService {
                         event);
 
                 logger.info("import file " + csvFilename + "...");
-                // String fullFileName = ftpPath + "/" + file.getName();
                 try (ByteArrayOutputStream is = new ByteArrayOutputStream();) {
 
                     // because time stamps are not provided by all ftp servers and always in same
                     // format we store the checksum of the file to test if the file has changed
                     // since the last import
-                    ftpClient.retrieveFile(csvFilename, is);
+
+                    // CHANGED: the return value of retrieveFile() was ignored. If the download
+                    // fails we must not continue with an empty/incomplete file, because the
+                    // deletion phase would remove all existing records.
+                    boolean downloaded = ftpClient.retrieveFile(csvFilename, is);
+                    if (!downloaded) {
+                        documentImportService.logMessage("│   ├── ⚠️ FTP download failed (replyCode="
+                                + ftpClient.getReplyCode() + ") - file: " + csvFilename, event);
+                        event.setResult(DocumentImportEvent.PROCESSING_ERROR);
+                        return null;
+                    }
                     byte[] rawData = is.toByteArray();
 
                     // Close Connection now
@@ -332,7 +354,8 @@ public class CSVImportService {
 
         } catch (IOException e) {
             logger.severe("FTP I/O Error: " + e.getMessage());
-            if (ftpClient.isConnected()) {
+            // CHANGED: null check for ftpClient added
+            if (ftpClient != null && ftpClient.isConnected()) {
                 int r = ftpClient.getReplyCode();
                 logger.severe("FTP ReplyCode=" + r);
                 documentImportService.logMessage(
@@ -344,8 +367,11 @@ public class CSVImportService {
 
         } finally {
             // do logout if still connected....
+            // CHANGED: null check for ftpClient added (NPE if the client was never
+            // created) and no 'return' inside finally, as it would silently override the
+            // result of the try/catch blocks.
             try {
-                if (ftpClient.isConnected()) {
+                if (ftpClient != null && ftpClient.isConnected()) {
                     logger.warning("FTP Client is till connected, closing.....");
                     ftpClient.logout();
                     ftpClient.disconnect();
@@ -353,7 +379,6 @@ public class CSVImportService {
             } catch (IOException e) {
                 documentImportService.logMessage("│   ├── FTP file transfer failed: " + e.getMessage(), event);
                 event.setResult(DocumentImportEvent.PROCESSING_ERROR);
-                return null;
             }
         }
 
@@ -382,8 +407,9 @@ public class CSVImportService {
      * equal, the entry will be updated/imported. If the entry does no longer exist,
      * the entry will be removed from the database. This operation runs in-memory
      * and reduces database access.
-     * 
-     * 
+     * <p>
+     * The lucene index is updated right after each written entity, so other
+     * processes always see a current index during a long running import.
      * 
      * @return ErrorMessage or empty String
      * @throws PluginException
@@ -395,14 +421,16 @@ public class CSVImportService {
         String log = "";
         int line = 0;
         String dataLine = null;
-        List<String> csvIndexCache = new ArrayList();
+        // CHANGED: HashSet instead of ArrayList - contains() is O(1) instead of O(n).
+        // This matters for 25.000 lines (loop and deletion phase).
+        Set<String> csvIndexCache = new HashSet<>();
         Map<String, RecordComparator> databaseCache = null;
         int workitemsTotal = 0;
         int workitemsImported = 0;
         int workitemsUpdated = 0;
         int workitemsDeleted = 0;
         int workitemsFailed = 0;
-        int blockSize = 0;
+        // CHANGED: 'blockSize' removed - no longer needed, see index update in the loop
 
         // read Workflow options (optional)
         String modelVersion = event.getSource().getItemValueString(DocumentImportService.SOURCE_ITEM_MODELVERSION);
@@ -419,12 +447,11 @@ public class CSVImportService {
 
             // read first line containing the object type
             String header = in.readLine();
-            if (!header.contains(";")) {
+            // CHANGED: null check added - an empty file caused a NullPointerException
+            if (header == null || !header.contains(";")) {
                 throw new PluginException(this.getClass().getName(), IMPORT_ERROR,
                         "File Format not supported, fields must be separated by ';' ");
             }
-            // String[] header1List = header1.split(";(?=([^\"]*\"[^\"]*\")*[^\"]*$)", 99);
-            // header1List = normalizeValueList(header1List);
             List<String> fields = parseFieldList(header);
 
             if (fields == null || fields.size() == 0) {
@@ -434,6 +461,11 @@ public class CSVImportService {
             if (type == null || type.isEmpty()) {
                 throw new PluginException(this.getClass().getName(), IMPORT_ERROR, "Missing type to import entities");
             }
+
+            // CHANGED: flush the index before reading the existing documents, because
+            // readDocumentsFromDatabase() uses a lucene search. An outdated index would
+            // lead to missing entries which would be imported a second time.
+            indexUpdateService.updateIndex();
             databaseCache = readDocumentsFromDatabase(fields, type, event);
 
             logger.info("...object type=" + type);
@@ -442,9 +474,16 @@ public class CSVImportService {
 
             // read content....
             while ((dataLine = in.readLine()) != null) {
-                blockSize++;
                 line++;
                 workitemsTotal++;
+
+                // CHANGED: progress log every 100 lines, independent of the 'continue' paths
+                // below (previously it was only reached after a written entity)
+                if (workitemsTotal % 100 == 0) {
+                    logger.info("│   ├── " + csvFileName + ": " + workitemsTotal + " entries read ("
+                            + workitemsImported + " imports , " + workitemsUpdated + " updates)");
+                }
+
                 ItemCollection entity = readEntity(dataLine, fields, type, keyField);
                 if (entity == null) {
                     logger.warning("...Incorrect data line: " + dataLine);
@@ -474,9 +513,7 @@ public class CSVImportService {
                 // test if entity already exists in database....
                 RecordComparator existingIndex = databaseCache.get(record.id);
                 if (existingIndex != null && existingIndex.hash == record.hash) {
-                    // we have an existing record
-                    // now let's see if the data has changed....
-                    // no changes!
+                    // no changes - skip this line, the index update below is not reached
                     continue;
                 }
                 if (existingIndex == null) {
@@ -494,14 +531,11 @@ public class CSVImportService {
                     workitemsUpdated++;
                 }
 
-                if (blockSize >= 100) {
-                    blockSize = 0;
-                    logger.info("│   ├── " + csvFileName + ": " + workitemsTotal + " entries read (" + workitemsImported
-                            + " imports , " + workitemsUpdated
-                            + " updates)");
-                    // flush lucene index!
-                    indexUpdateService.updateIndex();
-                }
+                // CHANGED: update the lucene index right after an entity was written. This
+                // line is only reached for written entities, as unchanged records have
+                // already left the loop via 'continue'. Replaces the former
+                // blockSize/100 logic which was rarely reached.
+                indexUpdateService.updateIndex();
             }
 
             logger.info("completed: " + workitemsTotal + " entries successful read");
@@ -521,7 +555,8 @@ public class CSVImportService {
                     inputStream.close();
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+                // CHANGED: use the logger instead of printStackTrace()
+                logger.log(Level.WARNING, "failed to close input stream: " + e.getMessage(), e);
             }
         }
 
@@ -535,6 +570,11 @@ public class CSVImportService {
                 workitemsDeleted++;
             }
 
+        }
+        // CHANGED: flush the index after the deletion phase, so it is also current if
+        // the caller fails after this point
+        if (workitemsDeleted > 0) {
+            indexUpdateService.updateIndex();
         }
 
         log += "..." + workitemsTotal + " entries read -> " + workitemsImported + " new entries - " + workitemsUpdated
@@ -573,7 +613,7 @@ public class CSVImportService {
      * This helper method reads all existing documents and stores the hash index in
      * a local map index.
      * 
-     * @return count of deletions
+     * @return map of existing records by key
      * @throws QueryException
      * @throws PluginException
      */
@@ -645,14 +685,16 @@ public class CSVImportService {
         String[] valuList = data.split(";(?=([^\"]*\"[^\"]*\")*[^\"]*$)", 99);
         valuList = normalizeValueList(valuList);
         for (String itemValue : valuList) {
-            // test if the token has content
-            itemValue = itemValue.trim();
-            if (itemValue != null && !itemValue.isEmpty()) {
+            // CHANGED: columns without a field name (null entries from parseFieldList)
+            // are skipped, as replaceItemValue(null, ...) is not valid. The column index
+            // still has to be incremented to stay in sync with the header.
+            String fieldName = fieldnames.get(iCol);
+            if (fieldName != null) {
+                // test if the token has content
+                itemValue = itemValue.trim();
                 // create a itemValue with the corresponding fieldName
-                result.replaceItemValue(fieldnames.get(iCol), itemValue);
-            } else {
-                // empty value
-                result.replaceItemValue(fieldnames.get(iCol), "");
+                // (CHANGED: simplified - an empty value results in an empty string anyway)
+                result.replaceItemValue(fieldName, itemValue);
             }
             iCol++;
             if (iCol >= fieldnames.size()) {
@@ -677,7 +719,9 @@ public class CSVImportService {
 
         for (int i = 0; i < data.length; i++) {
             String value = data[i];
-            if (value.startsWith("\"") && value.endsWith("\"")) {
+            // CHANGED: length check added - a single '"' would cause a
+            // StringIndexOutOfBoundsException in substring(1, 0)
+            if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
                 value = value.substring(1, value.length() - 1);
                 data[i] = value;
             }
@@ -709,7 +753,7 @@ public class CSVImportService {
                 field = field.replace('&', '_');
                 result.add("_" + field.trim());
             } else {
-                // add dummy entry
+                // add dummy entry (null entries are skipped in readEntity and generateHash)
                 result.add(null);
             }
 
@@ -732,18 +776,26 @@ public class CSVImportService {
         }
 
         /**
-         * Builds a hashcode from a
+         * Builds a hashcode from all field values of the entity.
          * 
          * @param wokritem
          * @param fields
          * @return
          */
         private int generateHash(ItemCollection wokritem, List<String> fields) {
-            String result = "";
+            // CHANGED: StringBuilder instead of string concatenation in a loop, null
+            // field names are skipped, and a separator is inserted between the values.
+            // Without a separator "ab"+"c" and "a"+"bc" produced the same hash and a
+            // change would not be detected.
+            StringBuilder result = new StringBuilder();
             for (String item : fields) {
-                result = result + wokritem.getItemValueString(item);
+                if (item == null) {
+                    continue;
+                }
+                result.append(wokritem.getItemValueString(item));
+                result.append('\u0001');
             }
-            return result.hashCode();
+            return result.toString().hashCode();
         }
     }
 }
