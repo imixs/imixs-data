@@ -73,6 +73,7 @@ public class DataViewController extends ViewController {
     protected ItemCollection dataViewDefinition = null;
     protected ItemCollection filter;
     protected String query;
+    protected String queryFilter;
     protected String errorMessage;
 
     @Inject
@@ -135,6 +136,8 @@ public class DataViewController extends ViewController {
                 // alternative 'workitem=...'
                 uniqueid = paramMap.get("workitem");
             }
+            queryFilter = paramMap.get("filter");
+
             dataViewDefinition = documentService.load(uniqueid);
         }
 
@@ -166,11 +169,6 @@ public class DataViewController extends ViewController {
                 this.setPageIndex(filter.getItemValueInteger("pageIndex"));
                 // prefetch data
                 this.run();
-                // if (!filter.getItemValueString("query").isEmpty()) {
-                // query = filter.getItemValueString("query");
-                // // Prefetch data to update total count and page count
-                // viewHandler.getData(this);
-                // }
             }
         } catch (QueryException | PluginException e) {
             logger.warning("Failed to load dataview definition: " + e.getMessage());
@@ -215,6 +213,14 @@ public class DataViewController extends ViewController {
         this.filter = filter;
     }
 
+    public String getQueryFilter() {
+        return queryFilter;
+    }
+
+    public void setQueryFilter(String queryFilter) {
+        this.queryFilter = queryFilter;
+    }
+
     public String getErrorMessage() {
         return errorMessage;
     }
@@ -236,6 +242,12 @@ public class DataViewController extends ViewController {
     public void run() throws PluginException, QueryException {
         reset();
         query = dataViewService.parseQuery(dataViewDefinition, filter);
+
+        // test if an optional queryFilter was defined
+        if (queryFilter != null && !queryFilter.isBlank()) {
+            query = query + " AND " + queryFilter;
+        }
+
         filter.setItemValue("query", query);
         // Prefetch data to update total count and page count
         viewHandler.getData(this);

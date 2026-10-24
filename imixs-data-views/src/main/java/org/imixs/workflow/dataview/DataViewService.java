@@ -50,11 +50,7 @@ import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 
 /**
- * The OpenAIAPIService provides methods to post prompt templates to the OpenAI
- * API supported by Llama-cpp http server.
- * 
- * The service supports various processing events to update a prompt template
- * and to evaluate a completion result
+ * The DataViewService provides methods to compute data views
  * 
  * 
  * @author rsoika
@@ -369,20 +365,20 @@ public class DataViewService implements Serializable {
                 String name = itemDef.getItemValueString("item.name");
                 try {
                     switch (type) {
-                    case "xs:double":
-                        row.getCell(cellNum).setCellValue(workitem.getItemValueDouble(name));
-                        break;
-                    case "xs:float":
-                        row.getCell(cellNum).setCellValue(workitem.getItemValueFloat(name));
-                        break;
-                    case "xs:int":
-                        row.getCell(cellNum).setCellValue(workitem.getItemValueInteger(name));
-                        break;
-                    case "xs:date":
-                        row.getCell(cellNum).setCellValue(workitem.getItemValueDate(name));
-                        break;
-                    default:
-                        row.getCell(cellNum).setCellValue(workitem.getItemValueString(name));
+                        case "xs:double":
+                            row.getCell(cellNum).setCellValue(workitem.getItemValueDouble(name));
+                            break;
+                        case "xs:float":
+                            row.getCell(cellNum).setCellValue(workitem.getItemValueFloat(name));
+                            break;
+                        case "xs:int":
+                            row.getCell(cellNum).setCellValue(workitem.getItemValueInteger(name));
+                            break;
+                        case "xs:date":
+                            row.getCell(cellNum).setCellValue(workitem.getItemValueDate(name));
+                            break;
+                        default:
+                            row.getCell(cellNum).setCellValue(workitem.getItemValueString(name));
                     }
                 } catch (Exception epoi) {
                     logger.warning("POI Error cell " + cellNum + " item: " + name + " - Error: " + epoi.getMessage());
@@ -450,43 +446,43 @@ public class DataViewService implements Serializable {
                 String fieldValue = "";
 
                 switch (type) {
-                case "xs:double":
-                    double _double = dataWorkitem.getItemValueDouble(name);
-                    fieldValue = (format != null && !format.isEmpty())
-                            ? String.format(format, _double)
-                            : String.valueOf(_double);
-                    break;
-                case "xs:float":
-                    float _float = dataWorkitem.getItemValueFloat(name);
-                    fieldValue = (format != null && !format.isEmpty())
-                            ? String.format(format, _float)
-                            : String.valueOf(_float);
-                    break;
-                case "xs:int":
-                    int _int = dataWorkitem.getItemValueInteger(name);
-                    fieldValue = (format != null && !format.isEmpty())
-                            ? String.format(format, _int)
-                            : String.valueOf(_int);
-                    break;
-                case "xs:date":
-                    Date _date = dataWorkitem.getItemValueDate(name);
-                    if (_date != null) {
-                        if (format != null && !format.isEmpty()) {
-                            SimpleDateFormat sdf = new SimpleDateFormat(format);
-                            fieldValue = sdf.format(_date);
-                        } else {
-                            fieldValue = _date.toString();
-                        }
-                    }
-                    break;
-                default:
-                    String value = dataWorkitem.getItemValueString(name);
-                    if (value != null) {
+                    case "xs:double":
+                        double _double = dataWorkitem.getItemValueDouble(name);
                         fieldValue = (format != null && !format.isEmpty())
-                                ? String.format(format, value)
-                                : value;
-                    }
-                    break;
+                                ? String.format(format, _double)
+                                : String.valueOf(_double);
+                        break;
+                    case "xs:float":
+                        float _float = dataWorkitem.getItemValueFloat(name);
+                        fieldValue = (format != null && !format.isEmpty())
+                                ? String.format(format, _float)
+                                : String.valueOf(_float);
+                        break;
+                    case "xs:int":
+                        int _int = dataWorkitem.getItemValueInteger(name);
+                        fieldValue = (format != null && !format.isEmpty())
+                                ? String.format(format, _int)
+                                : String.valueOf(_int);
+                        break;
+                    case "xs:date":
+                        Date _date = dataWorkitem.getItemValueDate(name);
+                        if (_date != null) {
+                            if (format != null && !format.isEmpty()) {
+                                SimpleDateFormat sdf = new SimpleDateFormat(format);
+                                fieldValue = sdf.format(_date);
+                            } else {
+                                fieldValue = _date.toString();
+                            }
+                        }
+                        break;
+                    default:
+                        String value = dataWorkitem.getItemValueString(name);
+                        if (value != null) {
+                            fieldValue = (format != null && !format.isEmpty())
+                                    ? String.format(format, value)
+                                    : value;
+                        }
+                        break;
                 }
                 line = line + escapeCSVField(fieldValue) + separator;
             }
