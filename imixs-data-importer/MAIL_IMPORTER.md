@@ -15,7 +15,7 @@ You can change the name of the archive folder by setting the option `archive.fol
 
 ## Filtering Mails by subject using regular expressions
 
-It is possible to filter emails by a subject. Therefor a regular expression can be added by the option property named `subejct.regex` - e.g.:
+It is possible to filter emails by a subject. Therefor a regular expression can be added by the option property named `subject.regex` - e.g.:
 
     subject.regex=(order|offer|invoice*)
 
@@ -26,12 +26,28 @@ In this example only messages with the text 'order', 'offer' or starting with 'i
 The _IMAPIImporterService_ provides the ability to detach files from an mail message object. The behaviour can be configured by the option property named `detach.mode`. The following detach modes are supported:
 
 - PDF - only PDF files attached will be detached together with the origin .eml file to the workitem. This is the default mode.
-- ALL - all files will be detached and the email content will be attached as a HTML file to the workitem.
+- ALL - all files will be detached and the email content will be attached as a HTML file (or PDF file, see [Gotenberg](#gotenberg-html-pdf-converter)) to the workitem.
 - NONE - no files will be detached and the origin email object will be attached as a .eml file to the workitem.
 
 To set the detachment mode add the option to the IMAP source:
 
     detach.mode=ALL
+
+## Remove Detached Files
+
+By default, detached files are stored twice in the workitem: as separate files and again inside the origin .eml file. To avoid this duplicate content, set the option `detach.remove`:
+
+    detach.remove=true
+
+If the option is set to true, all files detached by the current `detach.mode` are removed from the origin .eml file stored in the workitem. Files that were not detached (e.g. non-PDF files in mode 'PDF') remain in the .eml file. The message on the IMAP server is not modified. The default value is 'false'.
+
+## File Order
+
+The files are added to the workitem in the following order:
+
+1. the origin message (.eml)
+2. the mail body as HTML or PDF file (only in `detach.mode=ALL`)
+3. the detached files
 
 ## Preserve Origin Message
 

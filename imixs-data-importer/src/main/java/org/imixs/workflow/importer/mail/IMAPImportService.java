@@ -1,27 +1,27 @@
-/*  
- *  Imixs-Workflow 
- *  
- *  Copyright (C) 2001-2020 Imixs Software Solutions GmbH,  
+/*
+ *  Imixs-Workflow
+ *
+ *  Copyright (C) 2001-2020 Imixs Software Solutions GmbH,
  *  http://www.imixs.com
- *  
- *  This program is free software; you can redistribute it and/or 
- *  modify it under the terms of the GNU General Public License 
- *  as published by the Free Software Foundation; either version 2 
+ *
+ *  This program is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU General Public License
+ *  as published by the Free Software Foundation; either version 2
  *  of the License, or (at your option) any later version.
- *  
- *  This program is distributed in the hope that it will be useful, 
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of 
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
  *  General Public License for more details.
- *  
+ *
  *  You can receive a copy of the GNU General Public
  *  License at http://www.gnu.org/licenses/gpl.html
- *  
- *  Project: 
+ *
+ *  Project:
  *      https://www.imixs.org
  *      https://github.com/imixs/imixs-workflow
- *  
- *  Contributors:  
+ *
+ *  Contributors:
  *      Imixs Software Solutions GmbH - Project Management
  *      Ralph Soika - Software Developer
  */
@@ -30,7 +30,9 @@ package org.imixs.workflow.importer.mail;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Properties;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -65,32 +67,57 @@ import jakarta.mail.Part;
 import jakarta.mail.Store;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeBodyPart;
+import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeUtility;
 
 /**
- * The EmailImportAdapter scans a IMAP account
+ * The IMAPImportService scans an IMAP account.
  * <p>
- * The method creates for each email in the INBOX a workitem based on the
- * configuration defined by the import source.
+ * The service creates for each email in the INBOX (or a configured import
+ * folder) a workitem based on the configuration defined by the import source.
  * <p>
- * After the message was imported successfully, the message will be moved form
- * the INBOX into an archive folder. If the archive folder does not exist, the
- * method creates the folder. The folder name can be configured by the property
- * 'archive.folder'. The default name is 'imixs-archive'
+ * After the message was imported successfully, the message is moved from the
+ * import folder into an archive folder. If the archive folder does not exist,
+ * the service creates the folder. The folder name can be configured by the
+ * option 'archive.folder'. The default name is 'imixs-archive'.
  * <p>
- * The email message can be converted into HTML or PDF in case the option
- * 'detach.mode' is set to ALL. To generate the message in PDF format a
- * gotenberg service is expected to convert HTML to PDF. The gotenberg service
- * endpoint can be defined by the option 'gotenberg.service'
+ * The following options are supported:
+ * <ul>
+ * <li><b>detach.mode</b> - defines which file attachments are detached from
+ * the email and added to the workitem:
+ * <ul>
+ * <li>PDF (default) - only PDF attachments are detached. The origin message
+ * is always added to the workitem.</li>
+ * <li>ALL - all attachments are detached. In addition the mail body is added
+ * as a PDF or HTML file. The origin message is added only if
+ * 'preserve.origin' is true.</li>
+ * <li>NONE - no attachments are detached. The origin message is always added
+ * to the workitem.</li>
+ * </ul>
+ * </li>
+ * <li><b>detach.remove</b> - if set to 'true', all attachments which were
+ * detached and added to the workitem are removed from the origin message
+ * file stored in the workitem. This avoids duplicate content in the workitem.
+ * The message on the IMAP server is not modified. Default is 'false'.</li>
+ * <li><b>preserve.origin</b> - only evaluated in detach.mode=ALL. If set to
+ * 'false', the origin message is not added to the workitem. Default is
+ * 'true'.</li>
+ * <li><b>gotenberg.service</b> - endpoint of a Gotenberg service used to
+ * convert the mail body into a PDF file (detach.mode=ALL). If not defined or
+ * not reachable, the mail body is added in HTML format.</li>
+ * <li><b>subject.regex</b> - optional regular expression. Only messages with
+ * a matching subject are imported.</li>
+ * <li><b>archive.folder</b> - name of the IMAP archive folder.</li>
+ * <li><b>imap.authenticator</b> - class name of the IMAPAuthenticator used to
+ * open the mail store. Defaults to the IMAPBasicAuthenticator.</li>
+ * <li><b>debug</b> - enables additional debug output.</li>
+ * </ul>
  * <p>
- * To access a mail store the IMAPImportService injects IMAPAuthenticator's.
- * These authenticator classes can be used to authenticate against a Mail Store.
- * The authenticator to be used can be defined in the optional property
- * imap.authenticator. If not defined, the service defaults to the
- * IMAPBaasicAuthenticator implementation.
- * 
+ * To access a mail store the IMAPImportService injects IMAPAuthenticators.
+ * These authenticator classes are used to authenticate against a mail store.
+ *
  * @author rsoika
- * @version 1.0
+ * @version 1.1
  */
 @Stateless
 public class IMAPImportService {
@@ -101,6 +128,7 @@ public class IMAPImportService {
     public static final String OPTION_IMAP_AUTHENTICATOR = "imap.authenticator";
 
     public static final String OPTION_DETACH_MODE = "detach.mode";
+    public static final String OPTION_DETACH_REMOVE = "detach.remove";
     public static final String OPTION_PRESERVE_ORIGIN = "preserve.origin";
     public static final String OPTION_GOTENBERG_SERVICE = "gotenberg.service";
 
@@ -130,12 +158,12 @@ public class IMAPImportService {
     protected Instance<IMAPAuthenticator> imapAuthenticators;
 
     /**
-     * This method reacts on a CDI ImportEvent and reads documents form a IMAP
+     * This method reacts on a CDI ImportEvent and reads documents from an IMAP
      * server.
      * <p>
-     * Depending on the DETACH_MODE the method will detach file attachments form the
-     * email.
-     * 
+     * Depending on the option 'detach.mode' the method detaches file attachments
+     * from the email. With the option 'detach.remove' the detached files are
+     * removed from the origin message stored in the workitem.
      */
     public void onEvent(@Observes DocumentImportEvent event) {
         IMAPFolder inboxFolder = null;
@@ -160,8 +188,7 @@ public class IMAPImportService {
         Properties sourceOptions = documentImportService.getOptionsProperties(event.getSource());
         Pattern subjectPattern = null;
         String subjectRegex = sourceOptions.getProperty(OPTION_SUBJECT_REGEX, "");
-        boolean debug = Boolean.getBoolean(sourceOptions.getProperty(OPTION_DEBUG, "false"));
-        // do we have filter options providing a Subject Regex?
+        // do we have filter options providing a subject regex?
         if (subjectRegex != null && !subjectRegex.trim().isEmpty()) {
             try {
                 subjectPattern = Pattern.compile(subjectRegex);
@@ -197,12 +224,12 @@ public class IMAPImportService {
 
             // first we need to open the INBOX...
             inboxFolder = (IMAPFolder) store.getFolder("INBOX");
-            // next open the Import Folder
+            // next open the import folder
             IMAPFolder importFolder = null;
             // do we have a custom import folder?
             if (!importFolderName.isEmpty()) {
-                // in case a folder is specified this filder need to be opend from the INBOX
-                // Default folder!
+                // in case a folder is specified this folder needs to be opened from the
+                // INBOX default folder!
                 importFolder = (IMAPFolder) inboxFolder.getFolder(importFolderName);
             } else {
                 // if not specified it is always the INBOX
@@ -215,11 +242,16 @@ public class IMAPImportService {
             // workitem.
             String detachOption = sourceOptions.getProperty(OPTION_DETACH_MODE, DETACH_MODE_PDF);
             documentImportService.logMessage("│   ├── detach.mode = " + detachOption, event);
+            // Depending on the option 'detach.remove' detached attachments will be removed
+            // from the origin message stored in the workitem.
+            boolean detachRemove = Boolean
+                    .parseBoolean(sourceOptions.getProperty(OPTION_DETACH_REMOVE, "false"));
+            documentImportService.logMessage("│   ├── detach.remove = " + detachRemove, event);
 
             // open archive folder...
             IMAPFolder archiveFolder = openImapArchive(store, inboxFolder, sourceOptions, event);
 
-            // fetches all messages from the INBOX...
+            // fetch all messages from the import folder...
             Message[] messages = importFolder.getMessages();
             documentImportService.logMessage("│   ├── " + messages.length + " messages found", event);
             int successCount = 0;
@@ -257,17 +289,26 @@ public class IMAPImportService {
     }
 
     /**
-     * This method processes a single imap message object. The method creates a
-     * workitem and moves the message into the archive folder
-     * 
-     * The method returns true if the message was successfully imported
-     * 
-     * @param message
-     * @param subjectPattern
-     * @param event
-     * @param sourceOptions
-     * @param inportFolder
-     * @param archiveFolder
+     * This method processes a single IMAP message object. The method creates a
+     * workitem and moves the message into the archive folder.
+     * <p>
+     * Depending on the option 'detach.mode' file attachments are detached from
+     * the message and added to the workitem. If the option 'detach.remove' is set
+     * to 'true', the detached attachments are removed from the origin message
+     * file stored in the workitem. Because IMAP messages are read-only, this is
+     * done on a local copy of the message. The message on the IMAP server is not
+     * modified.
+     * <p>
+     * The method returns true if the message was successfully imported.
+     *
+     * @param message        - the IMAP message to be processed
+     * @param subjectPattern - optional subject filter (can be null)
+     * @param event          - the current import event
+     * @param sourceOptions  - the import source options
+     * @param importFolder   - the IMAP folder the message is read from
+     * @param archiveFolder  - the IMAP folder the message is moved to
+     * @return true if the message was imported, false if the message was
+     *         skipped
      * @throws MessagingException
      * @throws ModelException
      * @throws PluginException
@@ -279,12 +320,18 @@ public class IMAPImportService {
             Pattern subjectPattern,
             DocumentImportEvent event,
             Properties sourceOptions,
-            IMAPFolder inportFolder,
+            IMAPFolder importFolder,
             IMAPFolder archiveFolder) throws MessagingException, AccessDeniedException, ProcessingErrorException,
             PluginException, ModelException, IOException {
 
-        boolean debug = Boolean.getBoolean(sourceOptions.getProperty(OPTION_DEBUG, "false"));
+        // Note: Boolean.getBoolean() would read a system property - parseBoolean()
+        // evaluates the option value
+        boolean debug = Boolean.parseBoolean(sourceOptions.getProperty(OPTION_DEBUG, "false"));
         String detachOption = sourceOptions.getProperty(OPTION_DETACH_MODE, DETACH_MODE_PDF);
+        boolean detachRemove = Boolean.parseBoolean(sourceOptions.getProperty(OPTION_DETACH_REMOVE, "false"));
+        boolean preserveOrigin = "true"
+                .equalsIgnoreCase(sourceOptions.getProperty(OPTION_PRESERVE_ORIGIN, "true"));
+
         Address[] fromAddress = null;
         String subject = null;
         // if we can not open the mail a MessagingException is thrown - we normally skip
@@ -300,17 +347,12 @@ public class IMAPImportService {
         logger.fine("......subject = " + subject);
         // do we have a subject regular expression provided by the options?
         if (subjectPattern != null) {
-            if (subject == null || DEFAULT_NO_SUBJECT.equals(subject)) {
+            if (DEFAULT_NO_SUBJECT.equals(subject)) {
                 // skip this mail
                 return false;
             }
             // test if subject matches?
             Matcher subjectMatcher = subjectPattern.matcher(subject);
-            if (subjectMatcher == null) {
-                logger.finest("matcher is null!");
-                // skip this mail
-                return false;
-            }
             if (!subjectMatcher.find()) {
                 // skip this mail
                 return false;
@@ -332,18 +374,41 @@ public class IMAPImportService {
         workitem.setItemValue("mail.subject", subject);
         workitem.setItemValue("mail.sent", sent);
 
-        if (!DETACH_MODE_NONE.equals(detachOption)) {
+        // Will the origin message be added to the workitem?
+        // - DETACH_MODE_PDF / DETACH_MODE_NONE: always
+        // - DETACH_MODE_ALL: only if preserve.origin=true
+        boolean attachOrigin = !DETACH_MODE_ALL.equalsIgnoreCase(detachOption) || preserveOrigin;
+
+        // In case detached files should be removed from the origin message, we need a
+        // modifiable local copy, because IMAP messages are read-only. A copy is only
+        // needed if attachments are detached and the origin message is stored.
+        MimeMessage messageCopy = null;
+        if (detachRemove && attachOrigin && !DETACH_MODE_NONE.equalsIgnoreCase(detachOption)
+                && message instanceof MimeMessage) {
+            messageCopy = createMessageCopy((MimeMessage) message);
+        }
+        // the origin message to be stored in the workitem - either the cleaned copy or
+        // the unchanged IMAP message
+        Message originMessage = (messageCopy != null) ? messageCopy : message;
+
+        // Detached files are collected first and added to the workitem later. This
+        // allows us to add the origin message as the first file to the workitem.
+        List<FileData> detachedFiles = new ArrayList<>();
+
+        if (!DETACH_MODE_NONE.equalsIgnoreCase(detachOption)) {
             // scan for attachments....
-            // we need to test if the content is a multipart of if is is plain text mail
-            Object contentObject = message.getContent();
+            // we need to test if the content is a multipart or if it is a plain text mail
+            Object contentObject = originMessage.getContent();
             if (contentObject instanceof Multipart) {
-                // here we are save to cast the content to Mulipart
-                Multipart multiPart = (Multipart) message.getContent();
+                // here we are safe to cast the content to Multipart
+                Multipart multiPart = (Multipart) contentObject;
+                // collect all parts added to the workitem, so they can be removed afterwards
+                List<BodyPart> detachedParts = new ArrayList<>();
                 for (int i = 0; i < multiPart.getCount(); i++) {
 
                     BodyPart bodyPart = multiPart.getBodyPart(i);
                     if (bodyPart instanceof MimeBodyPart) {
-                        MimeBodyPart mimeBodyPart = (MimeBodyPart) multiPart.getBodyPart(i);
+                        MimeBodyPart mimeBodyPart = (MimeBodyPart) bodyPart;
                         if (Part.ATTACHMENT.equalsIgnoreCase(mimeBodyPart.getDisposition())) {
 
                             String fileName = mimeBodyPart.getFileName();
@@ -355,29 +420,53 @@ public class IMAPImportService {
                             // decode filename (issue #202)
                             fileName = MimeUtility.decodeText(fileName);
 
-                            // detach only add PDF files?
-                            if (DETACH_MODE_PDF.equals(detachOption)) {
+                            // detach only PDF files?
+                            if (DETACH_MODE_PDF.equalsIgnoreCase(detachOption)) {
                                 if (!fileName.toLowerCase().endsWith(".pdf")) {
                                     continue; // skip this attachment
                                 }
                             }
-                            // add this attachment
-                            InputStream input = mimeBodyPart.getInputStream();
-                            byte[] content = IMAPImportHelper.readAllBytes(input);
+                            // add this attachment to the workitem
+                            byte[] content;
+                            try (InputStream input = mimeBodyPart.getInputStream()) {
+                                content = IMAPImportHelper.readAllBytes(input);
+                            }
                             String contentType = mimeBodyPart.getContentType();
                             contentType = IMAPImportHelper.fixContentType(contentType, fileName, debug);
                             FileData fileData = new FileData(fileName, content, contentType, null);
-                            workitem.addFileData(fileData);
+                            // collect the file - it is added to the workitem after the origin message
+                            detachedFiles.add(fileData);
+                            // remember this part - it may be removed from the origin message
+                            detachedParts.add(bodyPart);
                         }
                     }
                 }
+
+                // remove all detached files from the message copy to avoid duplicate content
+                // in the workitem
+                if (messageCopy != null && !detachedParts.isEmpty()) {
+                    for (BodyPart part : detachedParts) {
+                        multiPart.removeBodyPart(part);
+                    }
+                    messageCopy.setContent(multiPart);
+                    messageCopy.saveChanges();
+                    logger.fine("......removed " + detachedParts.size()
+                            + " detached file(s) from origin message");
+                }
             } else {
-                // email content if of type plain/text - so we can not extract data...
+                // email content is of type text/plain - so we can not extract data...
             }
         }
 
-        // in DETACH_MODE_ALL we attach the mail body as a PDF or HTML file
-        if (DETACH_MODE_ALL.equals(detachOption)) {
+        // 1. attach the origin message (optionally without the detached files) as the
+        // first file of the workitem
+        if (attachOrigin) {
+            mailMessageService.attachMessage(originMessage, workitem);
+        }
+
+        // 2. in DETACH_MODE_ALL we attach the mail body as a PDF or HTML file
+        // Note: the conversion is based on the unchanged IMAP message
+        if (DETACH_MODE_ALL.equalsIgnoreCase(detachOption)) {
             // do we have a gotenberg service?
             String gotenbergService = sourceOptions.getProperty(OPTION_GOTENBERG_SERVICE);
             if (gotenbergService != null && !gotenbergService.isEmpty()) {
@@ -398,42 +487,60 @@ public class IMAPImportService {
                 // attach the email as HTML....
                 mailMessageService.attachHTMLMessage(message, workitem);
             }
-
-            // only if OPTION_PRESERVE_ORIGIN=true than attach the origin message!
-            String preserveOrigin = sourceOptions.getProperty(OPTION_PRESERVE_ORIGIN, "true");
-            if (preserveOrigin != null && "true".equalsIgnoreCase(preserveOrigin)) {
-                mailMessageService.attachMessage(message, workitem);
-            }
         }
 
-        // attach the full e-mail in case of DETACH_MODE_PDF or DETACH_MODE_NONE
-        if (!DETACH_MODE_ALL.equalsIgnoreCase(detachOption)) {
-            mailMessageService.attachMessage(message, workitem);
+        // 3. add all detached files to the workitem
+        for (FileData fileData : detachedFiles) {
+            workitem.addFileData(fileData);
         }
 
         // finally process the workitem
         workitem = workflowService.processWorkItemByNewTransaction(workitem);
 
-        // move message into the archive-folder
+        // move the unchanged IMAP message into the archive folder
         Message[] messageList = { message };
-        inportFolder.moveMessages(messageList, archiveFolder);
+        importFolder.moveMessages(messageList, archiveFolder);
         return true;
+    }
+
+    /**
+     * Creates a modifiable local copy of a (read-only) IMAP message.
+     * <p>
+     * The copy constructor of MimeMessage reads the complete message content
+     * from the source. Changes on the copy do not affect the message on the IMAP
+     * server.
+     * <p>
+     * The original Message-ID is preserved, because saveChanges() would
+     * otherwise generate a new one.
+     *
+     * @param source - the IMAP message
+     * @return a modifiable copy of the message
+     * @throws MessagingException
+     */
+    private MimeMessage createMessageCopy(MimeMessage source) throws MessagingException {
+        return new MimeMessage(source) {
+            @Override
+            protected void updateMessageID() throws MessagingException {
+                // keep the Message-ID copied from the source message
+            }
+        };
     }
 
     /**
      * This method opens the IMAP archive folder. If the folder does not exist, the
      * method creates the folder. The folder name can be configured by the property
      * ARCHIVE_FOLDER. The default name is 'imixs-archive'
-     * 
-     * @param sourceOptions
-     * @param store
-     * @param event
-     * @return
+     *
+     * @param store         - the mail store
+     * @param inbox         - the INBOX folder
+     * @param sourceOptions - the import source options
+     * @param event         - the current import event
+     * @return the opened archive folder
      * @throws MessagingException
      */
     private IMAPFolder openImapArchive(Store store, IMAPFolder inbox, Properties sourceOptions,
             DocumentImportEvent event) throws MessagingException {
-        // open Archive folder
+        // open archive folder
         String imapArchiveFolder = sourceOptions.getProperty(OPTION_ARCHIVE_FOLDER, ARCHIVE_DEFAULT_NAME);
         documentImportService.logMessage("│   ├── archive.folder = " + imapArchiveFolder, event);
         IMAPFolder archive = (IMAPFolder) inbox.getFolder(imapArchiveFolder);
@@ -452,9 +559,11 @@ public class IMAPImportService {
     }
 
     /**
-     * Creates and processes a new workitem with a given filedata
-     * 
-     * @return
+     * Creates a new workitem based on the given import source. The workitem is
+     * not yet processed.
+     *
+     * @param source - the import source
+     * @return a new workitem
      * @throws ModelException
      * @throws PluginException
      * @throws ProcessingErrorException
